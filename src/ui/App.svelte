@@ -3,6 +3,7 @@
   import Icon from './Icon.svelte';
   import Palette from './Palette.svelte';
   import Menu from './Menu.svelte';
+  import ZoomMenu, { fmtZoom } from './ZoomMenu.svelte';
   import { rgbToHex } from '../engine/color';
 
   let { editor }: { editor: Editor } = $props();
@@ -11,6 +12,7 @@
 
   let paletteOpen = $state(false);
   let menuOpen = $state(false);
+  let zoomOpen = $state(false);
   let hint = $state(true);
 
   try {
@@ -35,22 +37,38 @@
     const i = SIZES.indexOf($brushSize);
     brushSize.set(SIZES[(i + 1) % SIZES.length]);
   }
-
-  function fmtZoom(z: number) {
-    return z >= 10 ? `${Math.round(z)}×` : `${z.toFixed(1).replace(/\.0$/, '')}×`;
-  }
 </script>
 
 <div class="top-left build">{__BUILD_SHA__}</div>
 
 <div class="top-right">
-  <button class="panel pill" onclick={() => editor.resetView()} title="Показать рисунок">
+  <button
+    class="panel pill"
+    class:open={zoomOpen}
+    onclick={() => {
+      zoomOpen = !zoomOpen;
+      menuOpen = false;
+    }}
+    aria-label="Масштаб"
+    aria-expanded={zoomOpen}
+  >
     {fmtZoom($zoom)}
   </button>
-  <button class="panel icon-btn" onclick={() => (menuOpen = !menuOpen)} aria-label="Меню">
+  <button
+    class="panel icon-btn"
+    onclick={() => {
+      menuOpen = !menuOpen;
+      zoomOpen = false;
+    }}
+    aria-label="Меню"
+  >
     <Icon name="menu" />
   </button>
 </div>
+
+{#if zoomOpen}
+  <ZoomMenu {editor} onclose={() => (zoomOpen = false)} />
+{/if}
 
 {#if menuOpen}
   <Menu {editor} onclose={() => (menuOpen = false)} />
@@ -134,6 +152,9 @@
     min-width: 56px;
     padding: 0 12px;
     font-variant-numeric: tabular-nums;
+  }
+  .pill.open {
+    border-color: var(--accent);
   }
   .bottom {
     position: absolute;

@@ -104,6 +104,17 @@ export class Editor {
     this.camera.centerOn(b.x + b.w / 2, b.y + b.h / 2, zoom, r.width, r.height);
   }
 
+  /** Set an absolute zoom level, keeping the screen center fixed. */
+  zoomTo(z: number) {
+    this.zoomBy(z / this.camera.zoom);
+  }
+
+  /** Center the world origin without changing zoom. */
+  goToOrigin() {
+    const r = this.renderer;
+    this.camera.centerOn(0, 0, this.camera.zoom, r.width, r.height);
+  }
+
   zoomBy(factor: number) {
     this.camera.zoomAt(this.renderer.width / 2, this.renderer.height / 2, factor);
   }

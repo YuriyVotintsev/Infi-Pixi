@@ -51,7 +51,6 @@
     <input type="checkbox" checked={$showGrid} onchange={(e) => showGrid.set(e.currentTarget.checked)} />
   </label>
   <div class="divider"></div>
-  <button class="item" onclick={() => { editor.resetView(); onclose(); }}>Показать рисунок</button>
   <button class="item" onclick={() => exportPNG(1)}>Экспорт PNG 1×</button>
   <button class="item" onclick={() => exportPNG(8)}>Экспорт PNG 8×</button>
   <div class="divider"></div>
