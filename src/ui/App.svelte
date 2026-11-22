@@ -33,6 +33,48 @@
   ];
   const SIZES = [1, 2, 3, 4, 6, 8];
 
+  // ---- fullscreen ----
+  type FsDoc = Document & {
+    webkitFullscreenEnabled?: boolean;
+    webkitFullscreenElement?: Element | null;
+    webkitExitFullscreen?: () => Promise<void>;
+  };
+  type FsEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+  const doc = document as FsDoc;
+  const fsSupported = !!(doc.fullscreenEnabled || doc.webkitFullscreenEnabled);
+  // Already running as an installed app without browser chrome: no button needed.
+  const standalone =
+    matchMedia('(display-mode: fullscreen)').matches ||
+    matchMedia('(display-mode: standalone)').matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  let isFullscreen = $state(false);
+  const syncFs = () => (isFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement));
+  document.addEventListener('fullscreenchange', syncFs);
+  document.addEventListener('webkitfullscreenchange', syncFs);
+
+  async function toggleFullscreen() {
+    if (!fsSupported) {
+      alert(
+        'Этот браузер не умеет полноэкранный режим для сайтов (так на iPhone).\n\n' +
+          'Добавьте приложение на главный экран: «Поделиться» → «На экран Домой». ' +
+          'Оттуда оно откроется без панелей браузера.',
+      );
+      return;
+    }
+    try {
+      if (isFullscreen) {
+        await (doc.exitFullscreen ? doc.exitFullscreen() : doc.webkitExitFullscreen?.());
+      } else {
+        const el = document.documentElement as FsEl;
+        await (el.requestFullscreen
+          ? el.requestFullscreen({ navigationUI: 'hide' })
+          : el.webkitRequestFullscreen?.());
+      }
+    } catch (e) {
+      console.warn('fullscreen failed', e);
+    }
+  }
+
   function cycleSize() {
     const i = SIZES.indexOf($brushSize);
     brushSize.set(SIZES[(i + 1) % SIZES.length]);
@@ -42,6 +84,16 @@
 <div class="top-left build">{__BUILD_SHA__}</div>
 
 <div class="top-right">
+  {#if !standalone}
+    <button
+      class="panel icon-btn"
+      onclick={toggleFullscreen}
+      aria-label={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полный экран'}
+      title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полный экран'}
+    >
+      <Icon name={isFullscreen ? 'shrink' : 'expand'} />
+    </button>
+  {/if}
   <button
     class="panel pill"
     class:open={zoomOpen}
