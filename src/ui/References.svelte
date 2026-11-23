@@ -9,6 +9,8 @@
   // svelte-ignore state_referenced_locally
   const refs = editor.references;
   const items = refs.items;
+  const active = refs.active;
+  const hovered = refs.hovered;
 
   const OPACITIES = [1, 0.7, 0.4];
   /** Header height + gap, CSS px. */
@@ -45,6 +47,7 @@
     let x0 = 0, y0 = 0;
     return dragger(
       () => {
+        refs.active.set(r.id);
         x0 = r.x;
         y0 = r.y;
         refs.raise(r.id);
@@ -57,6 +60,7 @@
     let w0 = 0;
     return dragger(
       () => {
+        refs.active.set(r.id);
         w0 = r.w;
         refs.raise(r.id);
       },
@@ -94,10 +98,12 @@
   {@const barLeft = Math.min(Math.max(0, 8 - X), Math.max(0, W - barW))}
   <div
     class="ref"
+    class:on={r.id === $active || r.id === $hovered}
     style:transform="translate({X}px, {Y}px)"
     style:width="{W}px"
     style:height="{H}px"
   >
+    {#if r.id === $active || r.id === $hovered}
     <div class="bar panel" style:top="{barTop}px" style:left="{barLeft}px" style:width="{barW}px" role="toolbar" aria-label="Референс: {r.name}" tabindex="-1" onpointerdown={startMove(r)}>
       <span class="grip" aria-hidden="true">⠿</span>
       <span class="name">{r.name}</span>
@@ -108,6 +114,7 @@
         <Icon name="close" size={16} />
       </button>
     </div>
+    {/if}
     <img
       src={r.url}
       alt={r.name}
@@ -117,7 +124,9 @@
       class:pixelated={W / r.iw >= 2}
       onpointerdown={(e) => $tool === 'picker' && pick(r, e)}
     />
+    {#if r.id === $active || r.id === $hovered}
     <div class="resize" onpointerdown={startResize(r)} aria-label="Изменить размер" role="slider" aria-valuenow={Math.round(r.w)} tabindex="-1"></div>
+    {/if}
   </div>
 {/each}
 
@@ -129,6 +138,9 @@
     transform-origin: 0 0;
     will-change: transform;
     pointer-events: none;
+  }
+  .ref.on img {
+    outline: 2px solid var(--accent);
   }
   img {
     display: block;

@@ -262,7 +262,12 @@ export class InputController {
     this.editor.snapZoom(g.c.x, g.c.y);
     const quick = performance.now() - g.start < TAP_MAX_MS;
     if (quick && g.moved < TAP_MAX_MOVE) {
-      if (g.maxTouches === 2) this.editor.undo();
+      if (g.maxTouches === 1) {
+        // One-finger tap: show the controls of the reference under it (or hide them).
+        const [wx, wy] = this.editor.camera.toWorld(g.c.x, g.c.y);
+        const refs = this.editor.references;
+        refs.active.set(refs.hit(wx, wy));
+      } else if (g.maxTouches === 2) this.editor.undo();
       else if (g.maxTouches === 3) this.editor.redo();
     }
   }
@@ -350,6 +355,10 @@ export class InputController {
 
     if (this.stroke?.pointerId === e.pointerId) {
       for (const ce of this.coalesced(e)) this.continueStroke(this.local(ce));
+    }
+    if (e.pointerType === 'mouse' && e.buttons === 0) {
+      const [wx, wy] = this.editor.camera.toWorld(p.x, p.y);
+      this.editor.references.hovered.set(this.editor.references.hit(wx, wy));
     }
     // Pen hover (buttons === 0) and mouse move both show the cursor,
     // sized for the tool that would be used (eraser end hovers as eraser).

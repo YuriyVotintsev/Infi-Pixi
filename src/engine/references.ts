@@ -47,6 +47,21 @@ export class References {
   }
 
   /** Add an image file, centred on world point (cx, cy) and `worldWidth` wide. */
+  /** Reference whose header/resize handle are shown (tapped), and one under the mouse. */
+  readonly active = store<string | null>(null);
+  readonly hovered = store<string | null>(null);
+
+  /** Topmost reference containing world point (x, y). */
+  hit(x: number, y: number): string | null {
+    const list = this.items.get();
+    for (let i = list.length - 1; i >= 0; i--) {
+      const r = list[i];
+      const h = (r.w * r.ih) / r.iw;
+      if (x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + h) return r.id;
+    }
+    return null;
+  }
+
   async add(file: Blob, name: string, cx: number, cy: number, worldWidth: number) {
     const { blob, w: iw, h: ih } = await normalize(file);
     const w = Math.max(4, Math.round(worldWidth));
@@ -64,6 +79,7 @@ export class References {
     };
     this.blobs.set(ref.id, blob);
     this.items.update((list) => [...list, ref]);
+    this.active.set(ref.id);
     this.save(ref.id, 0);
   }
 
@@ -84,6 +100,8 @@ export class References {
     const r = this.items.get().find((x) => x.id === id);
     if (r) URL.revokeObjectURL(r.url);
     this.items.update((list) => list.filter((x) => x.id !== id));
+    if (this.active.get() === id) this.active.set(null);
+    if (this.hovered.get() === id) this.hovered.set(null);
     this.blobs.delete(id);
     this.pixels.delete(id);
     clearTimeout(this.saveTimers.get(id));
