@@ -17,11 +17,12 @@ export interface Hover {
 const GRID_MIN_ZOOM = 8;
 export const BG_COLOR = 0xcfd0d8;
 /**
- * Smallest on-screen size (CSS px) of a transparency-checker cell. Cells are
- * whole art pixels (1, 2, 4, 8…) so the checker scales with the art; when they
- * would get smaller than this, the next power of two fades in.
+ * Transparency checker: cell size is a power of two in art pixels (0.5, 1, 2, 4…)
+ * so it scales with the art. The smallest cell that is still at least
+ * CHECKER_MIN_CSS on screen is used; levels switch instantly.
  */
 const CHECKER_MIN_CSS = 8;
+const CHECKER_MIN_CELL = 0.5;
 
 /**
  * Renders the world on demand (no constant ticker) to save battery:
@@ -43,9 +44,7 @@ export class Renderer {
     autoGenerateMipmaps: false,
   });
   private checkerTex = new Texture({ source: this.checkerSource });
-  /** Fine level (cells of N art px) and the coarser one (2N) cross-faded on top. */
   private checker = new TilingSprite({ texture: this.checkerTex });
-  private checkerCoarse = new TilingSprite({ texture: this.checkerTex });
   /** Grid line color, chosen to contrast with the checker. */
   private gridColor = 0x000000;
   private cursor = new Graphics();
@@ -83,7 +82,7 @@ export class Renderer {
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     host.appendChild(canvas);
-    this.app.stage.addChild(this.checker, this.checkerCoarse, this.layer, this.grid, this.cursor);
+    this.app.stage.addChild(this.checker, this.layer, this.grid, this.cursor);
 
     for (const c of world.chunks.values()) this.addChunk(c);
     world.onChunkAdded = (c) => this.addChunk(c);
@@ -187,21 +186,11 @@ export class Renderer {
 
     // Checkerboard: fixed on-screen cell size (whole device pixels), scrolls with the canvas.
     // Checkerboard anchored to art pixels: it moves and scales exactly with the art.
-    // level = log2(cells in art px); fractional part cross-fades N → 2N.
-    const level = Math.max(0, Math.log2(CHECKER_MIN_CSS / z));
-    const n = 2 ** Math.floor(level);
-    const t = level - Math.floor(level);
-    for (const [sprite, cells, alpha] of [
-      [this.checker, n, 1],
-      [this.checkerCoarse, n * 2, t],
-    ] as const) {
-      sprite.visible = alpha > 0.001;
-      sprite.alpha = alpha;
-      sprite.width = this.width;
-      sprite.height = this.height;
-      sprite.tileScale.set(cells * z);
-      sprite.tilePosition.set(this.layer.x, this.layer.y);
-    }
+    const cells = Math.max(CHECKER_MIN_CELL, 2 ** Math.ceil(Math.log2(CHECKER_MIN_CSS / z) - 1e-9));
+    this.checker.width = this.width;
+    this.checker.height = this.height;
+    this.checker.tileScale.set(cells * z);
+    this.checker.tilePosition.set(this.layer.x, this.layer.y);
 
     // Cull chunks outside the viewport.
     const [x0, y0] = cam.toWorld(0, 0);
