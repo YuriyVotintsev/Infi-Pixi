@@ -31,8 +31,15 @@ export class Renderer {
   private views = new Map<Chunk, ChunkView>();
   private queued = false;
 
+  /** Viewport size in CSS pixels. */
   width = 0;
   height = 0;
+  /**
+   * Device pixels per CSS pixel, measured from the real backing-store size.
+   * May differ slightly per axis on fractional-DPR screens.
+   */
+  pxX = 1;
+  pxY = 1;
   showGrid = true;
   hover: Hover | null = null;
 
@@ -42,28 +49,56 @@ export class Renderer {
     await this.app.init({
       background: BG_COLOR,
       antialias: false,
-      autoDensity: true,
-      resolution: Math.min(window.devicePixelRatio || 1, 3),
+      // We size the backing store in exact device pixels ourselves (see resize below),
+      // so Pixi works at resolution 1 and the stage is scaled CSS→device.
+      autoDensity: false,
+      resolution: 1,
       autoStart: false,
       sharedTicker: false,
       preference: 'webgl',
     });
     this.app.ticker.stop();
-    host.appendChild(this.app.canvas);
+    const canvas = this.app.canvas;
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    host.appendChild(canvas);
     this.app.stage.addChild(this.layer, this.grid, this.cursor);
 
     for (const c of world.chunks.values()) this.addChunk(c);
     world.onChunkAdded = (c) => this.addChunk(c);
     world.onChunkRemoved = (c) => this.removeChunk(c);
 
-    const resize = () => {
-      this.width = host.clientWidth;
-      this.height = host.clientHeight;
-      this.app.renderer.resize(this.width, this.height);
+    // On fractional-DPR screens (e.g. 2.625) cssWidth*dpr is not an integer. If the
+    // canvas backing store is rounded, the browser rescales it on output and art
+    // pixels blur. device-pixel-content-box gives the exact device size instead.
+    const apply = (cssW: number, cssH: number, devW: number, devH: number) => {
+      if (cssW <= 0 || cssH <= 0) return;
+      this.width = cssW;
+      this.height = cssH;
+      this.pxX = devW / cssW;
+      this.pxY = devH / cssH;
+      this.app.renderer.resize(devW, devH);
+      this.app.stage.scale.set(this.pxX, this.pxY);
       this.requestRender();
     };
-    new ResizeObserver(resize).observe(host);
-    resize();
+    const ro = new ResizeObserver((entries) => {
+      const e = entries[entries.length - 1];
+      const { width: cw, height: ch } = e.contentRect;
+      const dpr = window.devicePixelRatio || 1;
+      const dev = e.devicePixelContentBoxSize?.[0];
+      // Trust the exact size only if it is consistent with the DPR (emulators may lie).
+      const ok = dev && Math.abs(dev.inlineSize - cw * dpr) <= 1 && Math.abs(dev.blockSize - ch * dpr) <= 1;
+      if (ok) apply(cw, ch, dev.inlineSize, dev.blockSize);
+      else apply(cw, ch, Math.round(cw * dpr), Math.round(ch * dpr));
+    });
+    try {
+      ro.observe(canvas, { box: 'device-pixel-content-box' });
+    } catch {
+      ro.observe(canvas); // Safari: falls back to rounding (DPR there is integer anyway)
+    }
+    const r = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    apply(r.width, r.height, Math.round(r.width * dpr), Math.round(r.height * dpr));
   }
 
   get canvas(): HTMLCanvasElement {
@@ -110,8 +145,7 @@ export class Renderer {
     this.world.renderDirty.clear();
 
     // Snap the offset to the device-pixel grid so pixel edges stay crisp.
-    const res = this.app.renderer.resolution;
-    this.layer.position.set(Math.round(cam.x * res) / res, Math.round(cam.y * res) / res);
+    this.layer.position.set(Math.round(cam.x * this.pxX) / this.pxX, Math.round(cam.y * this.pxY) / this.pxY);
     this.layer.scale.set(z);
 
     // Cull chunks outside the viewport.

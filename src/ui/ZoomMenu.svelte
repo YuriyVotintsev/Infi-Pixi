@@ -12,7 +12,14 @@
   // svelte-ignore state_referenced_locally
   const { zoom } = editor;
 
-  const PRESETS = [1, 2, 4, 8, 16, 32, 64];
+  const PRESETS = [1, 2, 4, 8, 16, 32, 64, 128];
+
+  /** Step through whole device-pixel zoom levels (×1.5 per step, at least ±1). */
+  function step(dir: 1 | -1) {
+    const z = $zoom;
+    if (dir > 0) editor.zoomTo(z < 1 ? Math.min(1, z * 1.5) : Math.max(Math.round(z) + 1, Math.round(z * 1.5)));
+    else editor.zoomTo(z <= 1 ? z / 1.5 : Math.min(Math.round(z) - 1, Math.round(z / 1.5)) || 1);
+  }
 
   function run(fn: () => void) {
     fn();
@@ -30,9 +37,9 @@
   </button>
   <div class="divider"></div>
   <div class="steps">
-    <button class="step" onclick={() => editor.zoomBy(1 / 1.5)} aria-label="Уменьшить">−</button>
+    <button class="step" onclick={() => step(-1)} aria-label="Уменьшить">−</button>
     <span class="cur">{fmtZoom($zoom)}</span>
-    <button class="step" onclick={() => editor.zoomBy(1.5)} aria-label="Увеличить">+</button>
+    <button class="step" onclick={() => step(1)} aria-label="Увеличить">+</button>
   </div>
   <div class="presets">
     {#each PRESETS as z (z)}

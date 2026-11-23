@@ -220,6 +220,7 @@ export class InputController {
     const g = this.gesture;
     this.gesture = null;
     if (!g) return;
+    this.editor.snapZoom(g.c.x, g.c.y);
     const quick = performance.now() - g.start < TAP_MAX_MS;
     if (quick && g.moved < TAP_MAX_MOVE) {
       if (g.maxTouches === 2) this.editor.undo();

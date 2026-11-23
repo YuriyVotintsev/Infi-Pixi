@@ -32,7 +32,11 @@ export class Editor {
   readonly palette = store<number[]>([]);
   readonly fingerDraw = persisted<boolean>('fingerDraw', false);
   readonly showGrid = persisted<boolean>('showGrid', true);
-  readonly zoom = store(this.camera.zoom);
+  /**
+   * Zoom shown to the user, in *physical* screen pixels per art pixel:
+   * 1× means one art pixel = one device pixel. The camera itself works in CSS pixels.
+   */
+  readonly zoom = store(1);
   readonly canUndo = store(false);
   readonly canRedo = store(false);
   /** Last input device seen; lets the UI adapt hints. */
@@ -52,7 +56,7 @@ export class Editor {
     await this.renderer.init(host, this.world, this.camera);
 
     this.camera.onChange = () => {
-      this.zoom.set(this.camera.zoom);
+      this.zoom.set(this.camera.zoom * this.dpr);
       this.renderer.requestRender();
       this.saveCameraSoon();
     };
@@ -72,6 +76,7 @@ export class Editor {
       }
     });
 
+    this.zoom.set(this.camera.zoom * this.dpr);
     if (!this.hasSavedCamera) this.resetView();
   }
 
@@ -101,17 +106,34 @@ export class Editor {
     const b = this.world.bounds();
     const r = this.renderer;
     if (!b) {
-      this.camera.centerOn(0, 0, 12, r.width, r.height);
+      this.camera.centerOn(0, 0, Math.round(12 * this.dpr) / this.dpr, r.width, r.height);
       return;
     }
     const fit = Math.min((r.width * 0.8) / b.w, (r.height * 0.7) / b.h);
-    const zoom = Math.max(1, Math.min(32, Math.floor(fit)));
-    this.camera.centerOn(b.x + b.w / 2, b.y + b.h / 2, zoom, r.width, r.height);
+    // Pick a whole number of device pixels per art pixel so the image stays crisp.
+    const dz = Math.max(1, Math.min(96, Math.floor(fit * this.dpr)));
+    this.camera.centerOn(b.x + b.w / 2, b.y + b.h / 2, dz / this.dpr, r.width, r.height);
   }
 
-  /** Set an absolute zoom level, keeping the screen center fixed. */
+  /**
+   * Round zoom to a whole number of device pixels per art pixel, so every art
+   * pixel is drawn with the same size. Keeps the world point under (sx, sy) fixed.
+   */
+  snapZoom(sx: number, sy: number) {
+    const dz = this.camera.zoom * this.dpr;
+    if (dz < 1) return;
+    const target = Math.round(dz);
+    if (Math.abs(target - dz) > 1e-3) this.camera.zoomAt(sx, sy, target / dz);
+  }
+
+  /** Device pixels per CSS pixel of the canvas. */
+  get dpr(): number {
+    return this.renderer.pxX;
+  }
+
+  /** Set an absolute zoom in device pixels per art pixel, keeping the screen center fixed. */
   zoomTo(z: number) {
-    this.zoomBy(z / this.camera.zoom);
+    this.zoomBy(z / this.dpr / this.camera.zoom);
   }
 
   /** Center the world origin without changing zoom. */
@@ -196,7 +218,6 @@ export class Editor {
       const c = JSON.parse(raw);
       if ([c.x, c.y, c.zoom].every(Number.isFinite)) {
         Object.assign(this.camera, { x: c.x, y: c.y, zoom: c.zoom });
-        this.zoom.set(c.zoom);
         this.hasSavedCamera = true;
       }
     } catch {
