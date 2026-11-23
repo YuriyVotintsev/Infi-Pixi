@@ -30,6 +30,7 @@ interface StrokeState {
 }
 
 const TAP_MAX_MS = 280;
+export const MAX_SIZE = 32;
 const TAP_MAX_MOVE = 12;
 
 export class InputController {
@@ -93,14 +94,14 @@ export class InputController {
     return { x: Math.floor(wx), y: Math.floor(wy) };
   }
 
-  private setHover(p: Pt | null) {
+  private setHover(p: Pt | null, tool: Tool = this.editor.tool.get()) {
     const r = this.editor.renderer;
     if (!p) {
       if (!r.hover) return;
       r.hover = null;
     } else {
       const px = this.pixelAt(p);
-      const size = this.editor.tool.get() === 'picker' ? 1 : this.editor.brushSize.get();
+      const size = this.editor.sizeFor(tool);
       if (r.hover && r.hover.x === px.x && r.hover.y === px.y && r.hover.size === size) return;
       r.hover = { ...px, size };
     }
@@ -156,7 +157,7 @@ export class InputController {
   }
 
   private stamp(x: number, y: number, value: number) {
-    const n = this.editor.brushSize.get();
+    const n = this.stroke ? this.editor.sizeFor(this.stroke.tool) : 1;
     const h = this.editor.history;
     const ox = x - Math.floor((n - 1) / 2), oy = y - Math.floor((n - 1) / 2);
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) h.set(ox + i, oy + j, value);
@@ -257,7 +258,7 @@ export class InputController {
       if (e.button === 5 || (e.buttons & 32) !== 0) { tool = 'eraser'; override = true; }
       else if (e.button === 2 || (e.buttons & 2) !== 0) { tool = 'picker'; override = true; }
       this.startStroke(e, tool, override);
-      this.setHover(this.local(e));
+      this.setHover(this.local(e), tool);
       return;
     }
 
@@ -312,8 +313,11 @@ export class InputController {
     if (this.stroke?.pointerId === e.pointerId) {
       for (const ce of this.coalesced(e)) this.continueStroke(this.local(ce));
     }
-    // Pen hover (buttons === 0) and mouse move both show the cursor.
-    this.setHover(p);
+    // Pen hover (buttons === 0) and mouse move both show the cursor,
+    // sized for the tool that would be used (eraser end hovers as eraser).
+    const hoverTool: Tool =
+      this.stroke?.tool ?? (e.pointerType === 'pen' && (e.buttons & 32) !== 0 ? 'eraser' : this.editor.tool.get());
+    this.setHover(p, hoverTool);
   };
 
   private onUp = (e: PointerEvent) => {
@@ -394,8 +398,8 @@ export class InputController {
       case 'b': case 'p': ed.tool.set('pen'); break;
       case 'e': ed.tool.set('eraser'); break;
       case 'i': ed.tool.set('picker'); break;
-      case '[': ed.brushSize.update((n) => Math.max(1, n - 1)); break;
-      case ']': ed.brushSize.update((n) => Math.min(16, n + 1)); break;
+      case '[': ed.sizeStore(ed.tool.get())?.update((n) => Math.max(1, n - 1)); break;
+      case ']': ed.sizeStore(ed.tool.get())?.update((n) => Math.min(MAX_SIZE, n + 1)); break;
       case '0': ed.resetView(); break;
       case '=': case '+': ed.zoomBy(1.25); break;
       case '-': ed.zoomBy(0.8); break;

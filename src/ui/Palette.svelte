@@ -4,7 +4,8 @@
   import Icon from './Icon.svelte';
   import { PALETTES } from '../engine/palettes';
 
-  let { editor, onclose }: { editor: Editor; onclose: () => void } = $props();
+  /** `full` = settings view (preset choice, add/remove colors); otherwise just swatches. */
+  let { editor, full = false, onclose }: { editor: Editor; full?: boolean; onclose: () => void } = $props();
   // svelte-ignore state_referenced_locally
   const { palette, color, tool, paletteId, paletteEdits } = editor;
   const edited = $derived($paletteId in $paletteEdits);
@@ -25,7 +26,8 @@
   }
 </script>
 
-<div class="panel palette">
+<div class="panel palette" class:compact={!full}>
+  {#if full}
   <div class="head">
     <select
       class="select"
@@ -46,6 +48,7 @@
       </button>
     {/if}
   </div>
+  {/if}
   <div class="grid">
     {#each $palette as c (c)}
       <button
@@ -57,11 +60,14 @@
         aria-label={rgbToHex(c)}
       ></button>
     {/each}
+    {#if full}
     <label class="sw add" title="Свой цвет">
       <Icon name="plus" size={18} />
       <input type="color" value={rgbToHex($color)} onchange={onCustom} />
     </label>
+    {/if}
   </div>
+  {#if full}
   <div class="row">
     <button class="link" onclick={() => (editing = !editing)}>
       {editing ? 'Готово' : 'Удалить цвета'}
@@ -69,12 +75,19 @@
     <span class="hex">{rgbToHex($color)}</span>
     <button class="link" onclick={onclose}>Закрыть</button>
   </div>
+  {/if}
 </div>
 
 <style>
   .palette {
     padding: 10px;
     width: min(380px, 100%);
+  }
+  .palette.compact {
+    padding: 8px;
+  }
+  .compact .grid {
+    max-height: min(34vh, 260px);
   }
   .head {
     display: flex;

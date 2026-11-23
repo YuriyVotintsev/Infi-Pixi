@@ -23,7 +23,9 @@ export class Editor {
   // UI-facing state
   readonly tool = persisted<Tool>('tool', 'pen');
   readonly color = persisted<number>('color', 0x000000);
-  readonly brushSize = persisted<number>('brushSize', 1);
+  /** Brush sizes, kept separately per tool. */
+  readonly penSize = persisted<number>('penSize', legacyNumber('brushSize', 1));
+  readonly eraserSize = persisted<number>('eraserSize', 1);
   /** Selected palette preset. */
   readonly paletteId = persisted<string>('paletteId', 'infi');
   /** User edits (added/removed colors) per preset id; absent = preset as shipped. */
@@ -69,12 +71,16 @@ export class Editor {
       this.renderer.showGrid = v;
       this.renderer.requestRender();
     });
-    this.brushSize.subscribe((size) => {
-      if (this.renderer.hover) {
-        this.renderer.hover = { ...this.renderer.hover, size };
-        this.renderer.requestRender();
-      }
-    });
+    // Keep the hover cursor in sync with the active tool's size.
+    const refreshHover = () => {
+      const h = this.renderer.hover;
+      if (!h) return;
+      this.renderer.hover = { ...h, size: this.sizeFor(this.tool.get()) };
+      this.renderer.requestRender();
+    };
+    this.penSize.subscribe(refreshHover);
+    this.eraserSize.subscribe(refreshHover);
+    this.tool.subscribe(refreshHover);
 
     this.zoom.set(this.camera.zoom * this.dpr);
     if (!this.hasSavedCamera) this.resetView();
@@ -168,6 +174,15 @@ export class Editor {
     this.editPalette(this.palette.get().filter((c) => c !== rgb));
   }
 
+  /** Size store of a tool, or null for tools without a size. */
+  sizeStore(tool: Tool) {
+    return tool === 'pen' ? this.penSize : tool === 'eraser' ? this.eraserSize : null;
+  }
+
+  sizeFor(tool: Tool): number {
+    return this.sizeStore(tool)?.get() ?? 1;
+  }
+
   /** Has the current palette been changed from its preset? */
   isPaletteEdited(): boolean {
     return this.paletteId.get() in this.paletteEdits.get();
@@ -239,6 +254,19 @@ export class Editor {
 }
 
 export { CHUNK };
+
+/** Read (and drop) a numeric setting stored by an earlier build. */
+function legacyNumber(key: string, fallback: number): number {
+  try {
+    const raw = localStorage.getItem('infi-pixi:' + key);
+    if (raw == null) return fallback;
+    localStorage.removeItem('infi-pixi:' + key);
+    const n = JSON.parse(raw);
+    return typeof n === 'number' && n > 0 ? n : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /** Earlier builds stored a single editable palette under 'palette'. */
 function migrateOldPalette(): Record<string, number[]> {

@@ -2,6 +2,8 @@
   import type { Editor, Tool } from '../engine/editor';
   import Icon from './Icon.svelte';
   import Palette from './Palette.svelte';
+  import ToolSettings from './ToolSettings.svelte';
+  import { press } from './press';
   import Menu from './Menu.svelte';
   import ZoomMenu, { fmtZoom } from './ZoomMenu.svelte';
   import { rgbToHex } from '../engine/color';
@@ -9,9 +11,15 @@
 
   let { editor }: { editor: Editor } = $props();
   // svelte-ignore state_referenced_locally
-  const { tool, color, brushSize, zoom, canUndo, canRedo } = editor;
+  const { tool, color, penSize, eraserSize, zoom, canUndo, canRedo } = editor;
 
-  let paletteOpen = $state(false);
+  /**
+   * Bottom panel. 'palette' is the quick swatch strip (tap on the color button);
+   * the rest are settings, opened by a long press on their toolbar button.
+   */
+  type Panel = null | 'palette' | 'palette-settings' | 'pen' | 'eraser';
+  let panel = $state<Panel>(null);
+  const isSettings = $derived(panel !== null && panel !== 'palette');
   let menuOpen = $state(false);
   let zoomOpen = $state(false);
   let hint = $state(true);
@@ -32,7 +40,21 @@
     { id: 'eraser', label: 'Ластик' },
     { id: 'picker', label: 'Пипетка' },
   ];
-  const SIZES = [1, 2, 3, 4, 6, 8];
+
+  function tapTool(t: Tool) {
+    tool.set(t);
+    if (isSettings) panel = null;
+  }
+
+  function longTool(t: Tool) {
+    tool.set(t);
+    // The picker has no settings.
+    panel = t === 'picker' ? null : t;
+  }
+
+  function sizeOf(t: Tool): number {
+    return t === 'pen' ? $penSize : t === 'eraser' ? $eraserSize : 1;
+  }
 
   // ---- fullscreen ----
   type FsDoc = Document & {
@@ -74,11 +96,6 @@
     } catch (e) {
       console.warn('fullscreen failed', e);
     }
-  }
-
-  function cycleSize() {
-    const i = SIZES.indexOf($brushSize);
-    brushSize.set(SIZES[(i + 1) % SIZES.length]);
   }
 </script>
 
@@ -138,15 +155,26 @@
     <div>
       ✍️ Стилус рисует<br />
       🤏 Пальцы двигают и зумят<br />
-      ✌️ Тап двумя пальцами: отмена, тремя: повтор
+      ✌️ Тап двумя пальцами: отмена, тремя: повтор<br />
+      👆 Долгое нажатие на инструмент или цвет открывает настройки
     </div>
     <button class="hint-ok" onclick={dismissHint}>Понятно</button>
   </div>
 {/if}
 
+{#if isSettings}
+  <button class="backdrop" onclick={() => (panel = null)} aria-label="Закрыть настройки"></button>
+{/if}
+
 <div class="bottom">
-  {#if paletteOpen}
-    <Palette {editor} onclose={() => (paletteOpen = false)} />
+  {#if panel === 'palette'}
+    <Palette {editor} onclose={() => (panel = null)} />
+  {:else if panel === 'palette-settings'}
+    <Palette {editor} full onclose={() => (panel = null)} />
+  {:else if panel === 'pen' || panel === 'eraser'}
+    {#key panel}
+      <ToolSettings {editor} tool={panel} />
+    {/key}
   {/if}
 
   <div class="panel toolbar">
@@ -154,26 +182,29 @@
       <button
         class="icon-btn"
         class:active={$tool === t.id}
-        onclick={() => tool.set(t.id)}
+        class:open={panel === t.id}
+        use:press={{ tap: () => tapTool(t.id), long: () => longTool(t.id) }}
         aria-label={t.label}
-        title={t.label}
+        title={t.id === 'picker' ? t.label : `${t.label} (удерживать: настройки)`}
       >
         <Icon name={t.id} />
+        {#if t.id !== 'picker' && sizeOf(t.id) > 1}
+          <span class="badge">{sizeOf(t.id)}</span>
+        {/if}
       </button>
     {/each}
 
     <div class="sep"></div>
 
-    <button class="icon-btn size" onclick={cycleSize} title="Размер кисти">
-      <span class="size-dot" style:width="{4 + $brushSize * 2}px" style:height="{4 + $brushSize * 2}px"></span>
-      <span class="size-num">{$brushSize}</span>
-    </button>
-
     <button
       class="icon-btn swatch-btn"
-      onclick={() => (paletteOpen = !paletteOpen)}
+      class:open={panel === 'palette' || panel === 'palette-settings'}
+      use:press={{
+        tap: () => (panel = panel === 'palette' || panel === 'palette-settings' ? null : 'palette'),
+        long: () => (panel = 'palette-settings'),
+      }}
       aria-label="Палитра"
-      title="Палитра"
+      title="Палитра (удерживать: настройки)"
     >
       <span class="swatch" style:background={rgbToHex($color)}></span>
     </button>
@@ -269,19 +300,30 @@
     margin: 0 4px;
     flex: none;
   }
-  .size {
+  .icon-btn {
     position: relative;
   }
-  .size-dot {
-    background: currentColor;
-    border-radius: 2px;
+  .icon-btn.open:not(.active) {
+    background: rgba(255, 255, 255, 0.1);
   }
-  .size-num {
+  .badge {
     position: absolute;
-    right: 4px;
+    right: 3px;
     bottom: 2px;
+    min-width: 14px;
     font-size: 10px;
-    color: var(--fg-dim);
+    line-height: 14px;
+    border-radius: 7px;
+    padding: 0 3px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+  }
+  .backdrop {
+    position: absolute;
+    inset: 0;
+    pointer-events: auto;
+    cursor: default;
   }
   .swatch {
     width: 28px;
