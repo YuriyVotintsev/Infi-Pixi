@@ -2,10 +2,12 @@
   import type { Editor } from '../engine/editor';
   import { hexToRgb, rgbToHex } from '../engine/color';
   import Icon from './Icon.svelte';
+  import { PALETTES } from '../engine/palettes';
 
   let { editor, onclose }: { editor: Editor; onclose: () => void } = $props();
   // svelte-ignore state_referenced_locally
-  const { palette, color, tool } = editor;
+  const { palette, color, tool, paletteId, paletteEdits } = editor;
+  const edited = $derived($paletteId in $paletteEdits);
 
   let editing = $state(false);
 
@@ -24,6 +26,26 @@
 </script>
 
 <div class="panel palette">
+  <div class="head">
+    <select
+      class="select"
+      value={$paletteId}
+      onchange={(e) => {
+        paletteId.set(e.currentTarget.value);
+        editing = false;
+      }}
+      aria-label="Палитра"
+    >
+      {#each PALETTES as p (p.id)}
+        <option value={p.id}>{p.name} · {p.colors.length}</option>
+      {/each}
+    </select>
+    {#if edited}
+      <button class="link small" onclick={() => editor.resetPalette()} title="Вернуть исходные цвета палитры">
+        Сбросить
+      </button>
+    {/if}
+  </div>
   <div class="grid">
     {#each $palette as c (c)}
       <button
@@ -52,12 +74,44 @@
 <style>
   .palette {
     padding: 10px;
-    width: min(360px, 100%);
+    width: min(380px, 100%);
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .select {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    padding: 0 32px 0 12px;
+    border-radius: 10px;
+    border: 1px solid var(--panel-border);
+    background: rgba(255, 255, 255, 0.06)
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239a9aa8' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+      no-repeat right 10px center / 16px;
+    color: var(--fg);
+    font: inherit;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .select option {
+    background: #26262e;
+    color: var(--fg);
+  }
+  .small {
+    font-size: 13px;
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
-    gap: 6px;
+    grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+    gap: 5px;
+    max-height: min(46vh, 360px);
+    overflow-y: auto;
+    padding: 3px;
+    margin: -3px;
   }
   .sw {
     aspect-ratio: 1;

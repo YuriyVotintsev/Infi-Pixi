@@ -5,17 +5,9 @@ import { Renderer } from './renderer';
 import { Storage } from './storage';
 import { persisted, store } from './store';
 import { CHUNK, World } from './world';
+import { findPalette } from './palettes';
 
 export type Tool = 'pen' | 'eraser' | 'picker';
-
-export const DEFAULT_PALETTE = [
-  0x000000, 0x3a3a46, 0x7a7a8c, 0xc2c2d0, 0xffffff,
-  0x5c1e1e, 0xb0303a, 0xf0594f, 0xff9e8a,
-  0x7a3b12, 0xd9741c, 0xf7b14a, 0xffe08a,
-  0x1f4d2b, 0x3f8f3a, 0x8fd14f, 0xd4f59a,
-  0x173a5e, 0x2a6fdb, 0x5fb8ff, 0xb5e6ff,
-  0x3d1f5c, 0x8a43c9, 0xe07ad8,
-];
 
 /**
  * Owns the engine pieces and exposes observable state + actions for the UI.
@@ -32,7 +24,12 @@ export class Editor {
   readonly tool = persisted<Tool>('tool', 'pen');
   readonly color = persisted<number>('color', 0x000000);
   readonly brushSize = persisted<number>('brushSize', 1);
-  readonly palette = persisted<number[]>('palette', DEFAULT_PALETTE);
+  /** Selected palette preset. */
+  readonly paletteId = persisted<string>('paletteId', 'infi');
+  /** User edits (added/removed colors) per preset id; absent = preset as shipped. */
+  readonly paletteEdits = persisted<Record<string, number[]>>('paletteEdits', migrateOldPalette());
+  /** Colors currently shown in the palette panel. */
+  readonly palette = store<number[]>([]);
   readonly fingerDraw = persisted<boolean>('fingerDraw', false);
   readonly showGrid = persisted<boolean>('showGrid', true);
   readonly zoom = store(this.camera.zoom);
@@ -41,7 +38,15 @@ export class Editor {
   /** Last input device seen; lets the UI adapt hints. */
   readonly lastPointer = store<'pen' | 'touch' | 'mouse'>('touch');
 
+  private syncPalette = () => {
+    const id = this.paletteId.get();
+    this.palette.set(this.paletteEdits.get()[id] ?? findPalette(id).colors);
+  };
+
   async init(host: HTMLElement) {
+    this.paletteId.subscribe(this.syncPalette);
+    this.paletteEdits.subscribe(this.syncPalette);
+
     await this.storage.load();
     this.restoreCamera();
     await this.renderer.init(host, this.world, this.camera);
@@ -127,14 +132,28 @@ export class Editor {
     this.renderer.requestRender();
   }
 
+  private editPalette(colors: number[]) {
+    this.paletteEdits.update((e) => ({ ...e, [this.paletteId.get()]: colors }));
+  }
+
   addColor(rgb: number) {
     const p = this.palette.get();
-    if (!p.includes(rgb)) this.palette.set([...p, rgb]);
+    if (!p.includes(rgb)) this.editPalette([...p, rgb]);
     this.color.set(rgb);
   }
 
   removeColor(rgb: number) {
-    this.palette.set(this.palette.get().filter((c) => c !== rgb));
+    this.editPalette(this.palette.get().filter((c) => c !== rgb));
+  }
+
+  /** Has the current palette been changed from its preset? */
+  isPaletteEdited(): boolean {
+    return this.paletteId.get() in this.paletteEdits.get();
+  }
+
+  resetPalette() {
+    const { [this.paletteId.get()]: _, ...rest } = this.paletteEdits.get();
+    this.paletteEdits.set(rest);
   }
 
   /** Export the drawing's bounding box as PNG, scaled by an integer factor. */
@@ -199,3 +218,18 @@ export class Editor {
 }
 
 export { CHUNK };
+
+/** Earlier builds stored a single editable palette under 'palette'. */
+function migrateOldPalette(): Record<string, number[]> {
+  try {
+    const raw = localStorage.getItem('infi-pixi:palette');
+    if (!raw) return {};
+    localStorage.removeItem('infi-pixi:palette');
+    const old = JSON.parse(raw);
+    const base = findPalette('infi').colors;
+    const same = Array.isArray(old) && old.length === base.length && old.every((c, i) => c === base[i]);
+    return Array.isArray(old) && !same ? { infi: old } : {};
+  } catch {
+    return {};
+  }
+}
