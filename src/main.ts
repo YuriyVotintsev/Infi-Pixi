@@ -3,6 +3,7 @@ import './style.css';
 import App from './ui/App.svelte';
 import { Editor } from './engine/editor';
 import { InputController } from './engine/input';
+import { startUpdateChecks } from './ui/updates';
 
 if (new URLSearchParams(location.search).has('debug')) {
   import('eruda').then(({ default: eruda }) => eruda.init());
@@ -13,6 +14,7 @@ async function start() {
   await editor.init(document.getElementById('stage')!);
   new InputController(editor);
   mount(App, { target: document.getElementById('ui')!, props: { editor } });
+  startUpdateChecks();
   // Handy for debugging from the eruda console.
   (window as unknown as { editor: Editor }).editor = editor;
 }

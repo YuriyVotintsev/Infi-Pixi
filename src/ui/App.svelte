@@ -5,6 +5,7 @@
   import Menu from './Menu.svelte';
   import ZoomMenu, { fmtZoom } from './ZoomMenu.svelte';
   import { rgbToHex } from '../engine/color';
+  import { newVersion, applyUpdate } from './updates';
 
   let { editor }: { editor: Editor } = $props();
   // svelte-ignore state_referenced_locally
@@ -118,6 +119,12 @@
   </button>
 </div>
 
+{#if $newVersion}
+  <button class="panel update" onclick={applyUpdate}>
+    Новая версия <code>{$newVersion}</code> · <b>Обновить</b>
+  </button>
+{/if}
+
 {#if zoomOpen}
   <ZoomMenu {editor} onclose={() => (zoomOpen = false)} />
 {/if}
@@ -204,6 +211,22 @@
     min-width: 56px;
     padding: 0 12px;
     font-variant-numeric: tabular-nums;
+  }
+  .update {
+    position: absolute;
+    top: calc(var(--safe-t) + 64px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 14px;
+    white-space: nowrap;
+    border-color: var(--accent);
+  }
+  .update code {
+    font-size: 12px;
+    color: var(--fg-dim);
+  }
+  .update b {
+    color: var(--accent);
   }
   .pill.open {
     border-color: var(--accent);
