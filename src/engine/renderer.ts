@@ -166,40 +166,49 @@ export class Renderer {
     const g = this.grid;
     g.clear();
     if (!this.showGrid) return;
-    const cam = this.camera;
-    const ox = this.layer.x, oy = this.layer.y, z = cam.zoom;
-    const w = this.width, h = this.height;
+    const z = this.camera.zoom;
 
-    // Fine pixel grid, fading in with zoom.
-    if (z >= GRID_MIN_ZOOM) {
-      const alpha = Math.min(0.18, ((z - GRID_MIN_ZOOM) / 8) * 0.18 + 0.05);
-      for (let x = Math.floor(x0); x <= x1; x++) {
-        const sx = x * z + ox;
-        g.moveTo(sx, 0).lineTo(sx, h);
-      }
-      for (let y = Math.floor(y0); y <= y1; y++) {
-        const sy = y * z + oy;
-        g.moveTo(0, sy).lineTo(w, sy);
-      }
-      g.stroke({ width: 1, color: 0x000000, alpha, pixelLine: true });
-    }
-
-    // Chunk boundaries every CHUNK pixels, when they are not too dense.
-    if (CHUNK * z >= 24) {
-      for (let x = Math.floor(x0 / CHUNK) * CHUNK; x <= x1; x += CHUNK) {
-        const sx = x * z + ox;
-        g.moveTo(sx, 0).lineTo(sx, h);
-      }
-      for (let y = Math.floor(y0 / CHUNK) * CHUNK; y <= y1; y += CHUNK) {
-        const sy = y * z + oy;
-        g.moveTo(0, sy).lineTo(w, sy);
-      }
-      g.stroke({ width: 1, color: 0x000000, alpha: 0.12, pixelLine: true });
-    }
+    // Three levels, finest first. A line is drawn only by the coarsest level it
+    // belongs to (and never on the origin axes), so overlapping lines don't stack.
+    // `minGap` is the on-screen spacing (CSS px) below which a level is hidden.
+    const levels = [
+      { step: 1, minGap: GRID_MIN_ZOOM, alpha: 0.08 },
+      { step: 16, minGap: 10, alpha: 0.2 },
+      { step: CHUNK, minGap: 10, alpha: 0.45 },
+    ];
+    levels.forEach((lv, i) => {
+      if (lv.step * z < lv.minGap) return;
+      // Fade in over the first doubling of spacing so levels don't pop.
+      const fade = Math.min(1, (lv.step * z - lv.minGap) / lv.minGap + 0.35);
+      const coarser = levels.slice(i + 1).map((l) => l.step);
+      this.gridLines(x0, y0, x1, y1, lv.step, (v) => v !== 0 && !coarser.some((c) => v % c === 0));
+      g.stroke({ width: 1, color: 0x000000, alpha: lv.alpha * fade, pixelLine: true });
+    });
 
     // Origin axes.
-    g.moveTo(ox, 0).lineTo(ox, h).moveTo(0, oy).lineTo(w, oy);
-    g.stroke({ width: 1, color: 0x4060ff, alpha: 0.35, pixelLine: true });
+    const ox = this.layer.x, oy = this.layer.y;
+    g.moveTo(ox, 0).lineTo(ox, this.height).moveTo(0, oy).lineTo(this.width, oy);
+    g.stroke({ width: 1, color: 0x4060ff, alpha: 0.5, pixelLine: true });
+  }
+
+  /** Add vertical + horizontal lines every `step` world pixels that pass `keep`. */
+  private gridLines(
+    x0: number, y0: number, x1: number, y1: number,
+    step: number, keep: (v: number) => boolean,
+  ) {
+    const g = this.grid;
+    const z = this.camera.zoom, ox = this.layer.x, oy = this.layer.y;
+    const w = this.width, h = this.height;
+    for (let x = Math.floor(x0 / step) * step; x <= x1; x += step) {
+      if (!keep(x)) continue;
+      const sx = x * z + ox;
+      g.moveTo(sx, 0).lineTo(sx, h);
+    }
+    for (let y = Math.floor(y0 / step) * step; y <= y1; y += step) {
+      if (!keep(y)) continue;
+      const sy = y * z + oy;
+      g.moveTo(0, sy).lineTo(w, sy);
+    }
   }
 
   private drawCursor() {
