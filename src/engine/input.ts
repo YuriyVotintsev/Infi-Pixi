@@ -27,6 +27,9 @@ interface StrokeState {
   last: Pt | null;
   value: number;
   startTime: number;
+  /** Select tool: drawing a new marquee or dragging the selection. */
+  selMode?: 'marquee' | 'move';
+  start?: Pt;
 }
 
 const TAP_MAX_MS = 280;
@@ -122,7 +125,25 @@ export class InputController {
       value,
       startTime: performance.now(),
     };
-    if (tool !== 'picker') ed.history.begin();
+    if (tool === 'select') {
+      const px = this.pixelAt(this.local(e));
+      const sel = ed.selection;
+      this.stroke.start = px;
+      this.stroke.last = px;
+      if (sel.contains(px.x, px.y)) {
+        this.stroke.selMode = 'move';
+        sel.beginMove(px.x, px.y);
+      } else {
+        this.stroke.selMode = 'marquee';
+        sel.beginMarquee(px.x, px.y);
+      }
+      return;
+    }
+    if (tool !== 'picker') {
+      // Painting (e.g. with the stylus eraser end) commits any selection move first.
+      ed.selection.clear();
+      ed.history.begin();
+    }
     this.continueStroke(this.local(e));
   }
 
@@ -136,6 +157,12 @@ export class InputController {
       return;
     }
     if (s.last && s.last.x === px.x && s.last.y === px.y) return;
+    if (s.tool === 'select') {
+      if (s.selMode === 'move') ed.selection.updateMove(px.x, px.y);
+      else ed.selection.updateMarquee(px.x, px.y);
+      s.last = px;
+      return;
+    }
     const from = s.last ?? px;
     this.line(from.x, from.y, px.x, px.y, s.value);
     s.last = px;
@@ -168,6 +195,17 @@ export class InputController {
     if (!s) return;
     this.stroke = null;
     const ed = this.editor;
+    if (s.tool === 'select') {
+      const sel = ed.selection;
+      const moved = !!s.last && !!s.start && (s.last.x !== s.start.x || s.last.y !== s.start.y);
+      if (s.selMode === 'move') sel.endMove(!commit);
+      else {
+        sel.endMarquee();
+        // A tap (or a cancelled drag) outside the selection just deselects.
+        if (!moved || !commit) sel.clear();
+      }
+      return;
+    }
     if (s.tool === 'picker') {
       // After picking from the toolbar picker, go back to the pen.
       if (!s.override) ed.tool.set('pen');
@@ -393,11 +431,29 @@ export class InputController {
     }
     if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? ed.redo() : ed.undo(); return; }
     if (mod && k === 'y') { e.preventDefault(); ed.redo(); return; }
+    if (mod && k === 'x') { e.preventDefault(); ed.cutSelection(); return; }
+    if (mod && k === 'c') { e.preventDefault(); ed.copySelection(); return; }
+    if (mod && k === 'v') { e.preventDefault(); ed.pasteSelection(); return; }
     if (mod) return;
+    const sel = ed.selection;
+    if (sel.rect) {
+      const arrows: Record<string, [number, number]> = {
+        arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1],
+      };
+      if (arrows[k]) {
+        e.preventDefault();
+        const step = e.shiftKey ? 8 : 1;
+        sel.nudge(arrows[k][0] * step, arrows[k][1] * step);
+        return;
+      }
+      if (k === 'delete' || k === 'backspace') { e.preventDefault(); ed.deleteSelection(); return; }
+      if (k === 'escape' || k === 'enter') { e.preventDefault(); ed.deselect(); return; }
+    }
     switch (k) {
       case 'b': case 'p': ed.tool.set('pen'); break;
       case 'e': ed.tool.set('eraser'); break;
       case 'i': ed.tool.set('picker'); break;
+      case 'm': ed.tool.set('select'); break;
       case '[': ed.sizeStore(ed.tool.get())?.update((n) => Math.max(1, n - 1)); break;
       case ']': ed.sizeStore(ed.tool.get())?.update((n) => Math.min(MAX_SIZE, n + 1)); break;
       case '0': ed.resetView(); break;

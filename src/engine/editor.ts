@@ -6,8 +6,9 @@ import { Storage } from './storage';
 import { persisted, store } from './store';
 import { CHUNK, World } from './world';
 import { findPalette } from './palettes';
+import { Selection } from './selection';
 
-export type Tool = 'pen' | 'eraser' | 'picker';
+export type Tool = 'pen' | 'eraser' | 'picker' | 'select';
 
 export type Backdrop = 'light' | 'medium' | 'dark';
 /** Transparency checker presets: two alternating colors each. */
@@ -27,6 +28,7 @@ export class Editor {
   readonly history = new History(this.world);
   readonly renderer = new Renderer();
   readonly storage = new Storage(this.world);
+  readonly selection = new Selection(this.world, this.history);
 
   // UI-facing state
   readonly tool = persisted<Tool>('tool', 'pen');
@@ -95,6 +97,15 @@ export class Editor {
     this.eraserSize.subscribe(refreshHover);
     this.tool.subscribe(refreshHover);
 
+    const sel = this.selection;
+    this.renderer.selection = sel;
+    sel.onChange = () => this.renderer.requestRender();
+    sel.onFloatingChanged = () => this.renderer.updateFloating();
+    // Leaving the select tool commits whatever is being moved.
+    this.tool.subscribe((t) => {
+      if (t !== 'select') sel.clear();
+    });
+
     this.zoom.set(this.camera.zoom * this.dpr);
     if (!this.hasSavedCamera) this.resetView();
   }
@@ -113,11 +124,49 @@ export class Editor {
   }
 
   undo() {
+    // Undo during a move drops it first, so the whole move is reverted at once.
+    this.selection.clear();
     this.history.undo();
   }
 
   redo() {
+    this.selection.clear();
     this.history.redo();
+  }
+
+  // ---- selection actions (UI + keyboard) ----
+
+  cutSelection() {
+    this.selection.cut();
+  }
+
+  copySelection() {
+    this.selection.copy();
+  }
+
+  deleteSelection() {
+    this.selection.erase();
+  }
+
+  /** Paste at the current selection, or centred in the view. */
+  pasteSelection() {
+    const sel = this.selection;
+    const c = sel.clipboard;
+    if (!c) return;
+    let x: number, y: number;
+    if (sel.rect) {
+      ({ x, y } = sel.rect);
+    } else {
+      const [cx, cy] = this.camera.toWorld(this.renderer.width / 2, this.renderer.height / 2);
+      x = Math.round(cx - c.w / 2);
+      y = Math.round(cy - c.h / 2);
+    }
+    this.tool.set('select');
+    sel.paste(x, y);
+  }
+
+  deselect() {
+    this.selection.clear();
   }
 
   /** Center on the drawing (or origin) at a comfortable zoom. */
@@ -166,6 +215,7 @@ export class Editor {
   }
 
   async clearAll() {
+    this.selection.clear();
     this.history.reset();
     this.world.clear();
     this.world.saveDirty.clear();

@@ -1,6 +1,7 @@
 import { Application, BufferImageSource, Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js';
 import type { Camera } from './camera';
 import { CHUNK, type Chunk, type World } from './world';
+import type { Selection } from './selection';
 
 interface ChunkView {
   sprite: Sprite;
@@ -49,6 +50,10 @@ export class Renderer {
   private gridColor = 0x000000;
   private gridAlpha: [number, number, number] = [0.2, 0.38, 0.58];
   private cursor = new Graphics();
+  /** Selection outline (screen space) and the floating pixels being moved (world space). */
+  private selGfx = new Graphics();
+  private floatSprite: Sprite | null = null;
+  selection: Selection | null = null;
   private views = new Map<Chunk, ChunkView>();
   private queued = false;
 
@@ -83,7 +88,7 @@ export class Renderer {
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     host.appendChild(canvas);
-    this.app.stage.addChild(this.checker, this.layer, this.grid, this.cursor);
+    this.app.stage.addChild(this.checker, this.layer, this.grid, this.selGfx, this.cursor);
 
     for (const c of world.chunks.values()) this.addChunk(c);
     world.onChunkAdded = (c) => this.addChunk(c);
@@ -213,6 +218,7 @@ export class Renderer {
     }
 
     this.drawGrid(x0, y0, x1, y1);
+    this.drawSelection();
     this.drawCursor();
     this.app.render();
   }
@@ -272,6 +278,60 @@ export class Renderer {
       const dy = Math.round((y * z + oy) * py) - back;
       g.rect(0, dy / py, w, dev / py);
     }
+  }
+
+  /** Rebuild the floating-layer sprite after the selection lifted/dropped pixels. */
+  updateFloating() {
+    this.floatSprite?.destroy({ texture: true, textureSource: true });
+    this.floatSprite = null;
+    const f = this.selection?.floating;
+    if (f) {
+      const source = new BufferImageSource({
+        resource: new Uint8Array(f.data.buffer, f.data.byteOffset, f.data.byteLength),
+        width: f.w,
+        height: f.h,
+        scaleMode: 'nearest',
+        autoGenerateMipmaps: false,
+      });
+      this.floatSprite = new Sprite(new Texture({ source }));
+      this.floatSprite.zIndex = 1; // above every chunk, even ones created later
+      this.layer.sortableChildren = true;
+      this.layer.addChild(this.floatSprite);
+    }
+    this.requestRender();
+  }
+
+  private drawSelection() {
+    const g = this.selGfx;
+    g.clear();
+    const r = this.selection?.rect;
+    if (this.floatSprite && r) this.floatSprite.position.set(r.x, r.y);
+    if (!r) return;
+    const z = this.camera.zoom;
+    const px = this.pxX, py = this.pxY;
+    // Snap the outline to device pixels, just outside the selected area.
+    const x0 = Math.round((r.x * z + this.layer.x) * px) / px;
+    const y0 = Math.round((r.y * z + this.layer.y) * py) / py;
+    const x1 = Math.round(((r.x + r.w) * z + this.layer.x) * px) / px;
+    const y1 = Math.round(((r.y + r.h) * z + this.layer.y) * py) / py;
+    const t = Math.max(1, Math.round(px)) / px; // ~1 CSS px thick
+    // White base…
+    g.rect(x0 - t, y0 - t, x1 - x0 + 2 * t, t)
+      .rect(x0 - t, y1, x1 - x0 + 2 * t, t)
+      .rect(x0 - t, y0, t, y1 - y0)
+      .rect(x1, y0, t, y1 - y0)
+      .fill({ color: 0xffffff, alpha: 0.95 });
+    // …with black dashes ("marching ants", static).
+    const dash = 4;
+    for (let x = x0 - t; x < x1 + t; x += dash * 2) {
+      const w = Math.min(dash, x1 + t - x);
+      g.rect(x, y0 - t, w, t).rect(x, y1, w, t);
+    }
+    for (let y = y0; y < y1; y += dash * 2) {
+      const h = Math.min(dash, y1 - y);
+      g.rect(x0 - t, y, t, h).rect(x1, y, t, h);
+    }
+    g.fill({ color: 0x000000, alpha: 0.9 });
   }
 
   private drawCursor() {

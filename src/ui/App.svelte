@@ -12,6 +12,9 @@
   let { editor }: { editor: Editor } = $props();
   // svelte-ignore state_referenced_locally
   const { tool, color, penSize, eraserSize, zoom, canUndo, canRedo } = editor;
+  // svelte-ignore state_referenced_locally
+  const selState = editor.selection.state;
+  const showSelBar = $derived($tool === 'select' && ($selState.active || $selState.hasClipboard));
 
   /**
    * Bottom panel. 'palette' is the quick swatch strip (tap on the color button);
@@ -39,6 +42,7 @@
     { id: 'pen', label: 'Карандаш' },
     { id: 'eraser', label: 'Ластик' },
     { id: 'picker', label: 'Пипетка' },
+    { id: 'select', label: 'Выделение' },
   ];
 
   function tapTool(t: Tool) {
@@ -48,8 +52,8 @@
 
   function longTool(t: Tool) {
     tool.set(t);
-    // The picker has no settings.
-    panel = t === 'picker' ? null : t;
+    // Only pen and eraser have settings.
+    panel = t === 'pen' || t === 'eraser' ? t : null;
   }
 
   function sizeOf(t: Tool): number {
@@ -177,6 +181,27 @@
     {/key}
   {/if}
 
+  {#if showSelBar}
+    <div class="panel selbar" role="toolbar" aria-label="Выделение">
+      <button class="icon-btn" onclick={() => editor.cutSelection()} disabled={!$selState.active} aria-label="Вырезать" title="Вырезать (Ctrl+X)">
+        <Icon name="cut" />
+      </button>
+      <button class="icon-btn" onclick={() => editor.copySelection()} disabled={!$selState.active} aria-label="Копировать" title="Копировать (Ctrl+C)">
+        <Icon name="copy" />
+      </button>
+      <button class="icon-btn" onclick={() => editor.pasteSelection()} disabled={!$selState.hasClipboard} aria-label="Вставить" title="Вставить (Ctrl+V)">
+        <Icon name="paste" />
+      </button>
+      <button class="icon-btn" onclick={() => editor.deleteSelection()} disabled={!$selState.active} aria-label="Удалить" title="Удалить (Delete)">
+        <Icon name="trash" />
+      </button>
+      <div class="sep"></div>
+      <button class="icon-btn" onclick={() => editor.deselect()} disabled={!$selState.active} aria-label="Готово" title="Готово (Enter)">
+        <Icon name="check" />
+      </button>
+    </div>
+  {/if}
+
   <div class="panel toolbar">
     {#each tools as t (t.id)}
       <button
@@ -185,10 +210,10 @@
         class:open={panel === t.id}
         use:press={{ tap: () => tapTool(t.id), long: () => longTool(t.id) }}
         aria-label={t.label}
-        title={t.id === 'picker' ? t.label : `${t.label} (удерживать: настройки)`}
+        title={t.id === 'pen' || t.id === 'eraser' ? `${t.label} (удерживать: настройки)` : t.label}
       >
         <Icon name={t.id} />
-        {#if t.id !== 'picker' && sizeOf(t.id) > 1}
+        {#if (t.id === 'pen' || t.id === 'eraser') && sizeOf(t.id) > 1}
           <span class="badge">{sizeOf(t.id)}</span>
         {/if}
       </button>
@@ -211,7 +236,7 @@
 
     <div class="sep"></div>
 
-    <button class="icon-btn" onclick={() => editor.undo()} disabled={!$canUndo} aria-label="Отменить">
+    <button class="icon-btn" onclick={() => editor.undo()} disabled={!$canUndo && !$selState.floating} aria-label="Отменить">
       <Icon name="undo" />
     </button>
     <button class="icon-btn" onclick={() => editor.redo()} disabled={!$canRedo} aria-label="Повторить">
@@ -273,6 +298,12 @@
     align-items: center;
     gap: 8px;
     padding: 0 8px;
+  }
+  .selbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
   }
   .toolbar {
     display: flex;

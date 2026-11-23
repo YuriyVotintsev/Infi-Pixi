@@ -10,6 +10,12 @@
     menu: 'M5 12h.01 M12 12h.01 M19 12h.01',
     plus: 'M12 5v14 M5 12h14',
     close: 'M6 6l12 12 M18 6L6 18',
+    select: 'M4 8V4h4 M10 4h4 M16 4h4v4 M20 10v4 M20 16v4h-4 M14 20h-4 M8 20H4v-4 M4 14v-4',
+    cut: 'M6 7a2.5 2.5 0 1 0 0 .01 M6 17a2.5 2.5 0 1 0 0 .01 M8.2 8.3L20 18 M8.2 15.7L20 6',
+    copy: 'M9 9h10v10H9z M15 9V5H5v10h4',
+    paste: 'M9 4h6v3H9z M7 5.5H5V20h14V5.5h-2 M9 12h6 M9 16h4',
+    trash: 'M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13 M10 11v6 M14 11v6',
+    check: 'M5 12.5l4.5 4.5L19 7.5',
     expand: 'M4 9V4h5 M20 9V4h-5 M4 15v5h5 M20 15v5h-5',
     shrink: 'M9 4v5H4 M15 4v5h5 M9 20v-5H4 M15 20v-5h5',
   };
