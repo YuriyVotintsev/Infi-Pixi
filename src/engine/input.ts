@@ -433,7 +433,7 @@ export class InputController {
     if (mod && k === 'y') { e.preventDefault(); ed.redo(); return; }
     if (mod && k === 'x') { e.preventDefault(); ed.cutSelection(); return; }
     if (mod && k === 'c') { e.preventDefault(); ed.copySelection(); return; }
-    if (mod && k === 'v') { e.preventDefault(); ed.pasteSelection(); return; }
+    // Ctrl+V is handled by the 'paste' event (main.ts) so a system clipboard image can win.
     if (mod) return;
     const sel = ed.selection;
     if (sel.rect) {

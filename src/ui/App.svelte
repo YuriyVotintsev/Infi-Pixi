@@ -3,6 +3,7 @@
   import Icon from './Icon.svelte';
   import Palette from './Palette.svelte';
   import ToolSettings from './ToolSettings.svelte';
+  import References from './References.svelte';
   import { press } from './press';
   import Menu from './Menu.svelte';
   import ZoomMenu, { fmtZoom } from './ZoomMenu.svelte';
@@ -102,6 +103,8 @@
     }
   }
 </script>
+
+<References {editor} />
 
 <div class="top-left build">{__BUILD_SHA__}</div>
 

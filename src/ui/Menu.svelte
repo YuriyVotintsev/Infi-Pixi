@@ -32,6 +32,21 @@
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 
+  let fileInput: HTMLInputElement;
+
+  async function onRefFile(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    onclose();
+    try {
+      await editor.addReference(file, file.name.replace(/\.[^.]+$/, ''));
+    } catch (err) {
+      alert('Не удалось открыть изображение: ' + (err as Error).message);
+    }
+  }
+
   async function clearAll() {
     if (confirm('Очистить весь холст? Это нельзя отменить.')) {
       await editor.clearAll();
@@ -69,6 +84,9 @@
       </button>
     {/each}
   </div>
+  <div class="divider"></div>
+  <button class="item" onclick={() => fileInput.click()}>Добавить референс…</button>
+  <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={onRefFile} />
   <div class="divider"></div>
   <button class="item" onclick={() => exportPNG(1)}>Экспорт PNG 1×</button>
   <button class="item" onclick={() => exportPNG(8)}>Экспорт PNG 8×</button>

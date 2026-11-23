@@ -7,6 +7,7 @@ import { persisted, store } from './store';
 import { CHUNK, World } from './world';
 import { findPalette } from './palettes';
 import { Selection } from './selection';
+import { References } from './references';
 
 export type Tool = 'pen' | 'eraser' | 'picker' | 'select';
 
@@ -50,6 +51,9 @@ export class Editor {
    * 1× means one art pixel = one device pixel. The camera itself works in CSS pixels.
    */
   readonly zoom = store(1);
+  /** Camera in CSS px (screen = world * zoom + x/y), for DOM overlays that live in world space. */
+  readonly view = store({ x: 0, y: 0, zoom: 1 });
+  readonly references = new References();
   readonly canUndo = store(false);
   readonly canRedo = store(false);
   /** Last input device seen; lets the UI adapt hints. */
@@ -64,12 +68,13 @@ export class Editor {
     this.paletteId.subscribe(this.syncPalette);
     this.paletteEdits.subscribe(this.syncPalette);
 
-    await this.storage.load();
+    await Promise.all([this.storage.load(), this.references.load()]);
     this.restoreCamera();
     await this.renderer.init(host, this.world, this.camera);
 
     this.camera.onChange = () => {
       this.zoom.set(this.camera.zoom * this.dpr);
+      this.view.set({ x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom });
       this.renderer.requestRender();
       this.saveCameraSoon();
     };
@@ -107,6 +112,7 @@ export class Editor {
     });
 
     this.zoom.set(this.camera.zoom * this.dpr);
+    this.view.set({ x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom });
     if (!this.hasSavedCamera) this.resetView();
   }
 
@@ -163,6 +169,13 @@ export class Editor {
     }
     this.tool.set('select');
     sel.paste(x, y);
+  }
+
+  /** Add a reference image centred in the view, about half the screen wide. */
+  async addReference(file: Blob, name = '') {
+    const r = this.renderer;
+    const [cx, cy] = this.camera.toWorld(r.width / 2, r.height / 2);
+    await this.references.add(file, name, cx, cy, (Math.min(r.width, r.height) * 0.6) / this.camera.zoom);
   }
 
   deselect() {

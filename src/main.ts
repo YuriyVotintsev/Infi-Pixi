@@ -15,6 +15,23 @@ async function start() {
   new InputController(editor);
   mount(App, { target: document.getElementById('ui')!, props: { editor } });
   startUpdateChecks();
+
+  // Desktop: paste an image (Ctrl+V with an image on the clipboard) or drop a file → reference.
+  window.addEventListener('paste', (e) => {
+    const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith('image/'));
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    e.preventDefault();
+    if (file) editor.addReference(file, file.name.replace(/\.[^.]+$/, '') || 'Вставка');
+    else editor.pasteSelection();
+  });
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    for (const file of e.dataTransfer?.files ?? []) {
+      if (file.type.startsWith('image/')) editor.addReference(file, file.name.replace(/\.[^.]+$/, ''));
+    }
+  });
   // Handy for debugging from the eruda console.
   (window as unknown as { editor: Editor }).editor = editor;
 }
