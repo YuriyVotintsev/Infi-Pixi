@@ -45,8 +45,9 @@ export class Renderer {
   });
   private checkerTex = new Texture({ source: this.checkerSource });
   private checker = new TilingSprite({ texture: this.checkerTex });
-  /** Grid line color, chosen to contrast with the checker. */
+  /** Grid line color and per-level opacity (1px, 16px, 64px), tuned to the checker. */
   private gridColor = 0x000000;
+  private gridAlpha: [number, number, number] = [0.2, 0.38, 0.58];
   private cursor = new Graphics();
   private views = new Map<Chunk, ChunkView>();
   private queued = false;
@@ -160,7 +161,17 @@ export class Renderer {
     });
     this.checkerSource.update();
     const lum = (c: number) => 0.299 * ((c >> 16) & 0xff) + 0.587 * ((c >> 8) & 0xff) + 0.114 * (c & 0xff);
-    this.gridColor = (lum(a) + lum(b)) / 2 < 110 ? 0xffffff : 0x000000;
+    const l = (lum(a) + lum(b)) / 2;
+    if (l < 110) {
+      this.gridColor = 0xffffff;
+      this.gridAlpha = [0.14, 0.3, 0.5];
+    } else if (l < 200) {
+      this.gridColor = 0x000000;
+      this.gridAlpha = [0.22, 0.42, 0.65];
+    } else {
+      this.gridColor = 0x000000;
+      this.gridAlpha = [0.2, 0.38, 0.58];
+    }
     this.requestRender();
   }
 
@@ -211,47 +222,55 @@ export class Renderer {
     g.clear();
     if (!this.showGrid) return;
     const z = this.camera.zoom;
+    const px = this.pxX;
 
     // Three levels, finest first. A line is drawn only by the coarsest level it
     // belongs to (and never on the origin axes), so overlapping lines don't stack.
     // `minGap` is the on-screen spacing (CSS px) below which a level is hidden.
+    // `dev` is the line thickness in device pixels: 1px lines alone are almost
+    // invisible on 3× screens, so coarser levels get ~⅔ and ~1 CSS px.
     const levels = [
-      { step: 1, minGap: GRID_MIN_ZOOM, alpha: 0.08 },
-      { step: 16, minGap: 10, alpha: 0.2 },
-      { step: CHUNK, minGap: 10, alpha: 0.45 },
+      { step: 1, minGap: GRID_MIN_ZOOM, alpha: this.gridAlpha[0], dev: 1 },
+      { step: 16, minGap: 10, alpha: this.gridAlpha[1], dev: Math.max(1, Math.round(px * 0.67)) },
+      { step: CHUNK, minGap: 10, alpha: this.gridAlpha[2], dev: Math.max(2, Math.round(px)) },
     ];
     levels.forEach((lv, i) => {
       if (lv.step * z < lv.minGap) return;
       // Fade in over the first doubling of spacing so levels don't pop.
-      const fade = Math.min(1, (lv.step * z - lv.minGap) / lv.minGap + 0.35);
+      const fade = Math.min(1, ((lv.step * z - lv.minGap) / lv.minGap) * 2 + 0.6);
       const coarser = levels.slice(i + 1).map((l) => l.step);
-      this.gridLines(x0, y0, x1, y1, lv.step, (v) => v !== 0 && !coarser.some((c) => v % c === 0));
-      g.stroke({ width: 1, color: this.gridColor, alpha: lv.alpha * fade, pixelLine: true });
+      this.gridLines(x0, y0, x1, y1, lv.step, lv.dev, (v) => v !== 0 && !coarser.some((c) => v % c === 0));
+      g.fill({ color: this.gridColor, alpha: lv.alpha * fade });
     });
 
     // Origin axes.
-    const ox = this.layer.x, oy = this.layer.y;
-    g.moveTo(ox, 0).lineTo(ox, this.height).moveTo(0, oy).lineTo(this.width, oy);
-    g.stroke({ width: 1, color: 0x4060ff, alpha: 0.5, pixelLine: true });
+    this.gridLines(x0, y0, x1, y1, 1, Math.max(2, Math.round(px)), (v) => v === 0);
+    g.fill({ color: 0x4060ff, alpha: 0.6 });
   }
 
-  /** Add vertical + horizontal lines every `step` world pixels that pass `keep`. */
+  /**
+   * Add vertical + horizontal bars every `step` world pixels that pass `keep`,
+   * `dev` device pixels thick, centred on the pixel boundary and snapped to the
+   * device-pixel grid.
+   */
   private gridLines(
     x0: number, y0: number, x1: number, y1: number,
-    step: number, keep: (v: number) => boolean,
+    step: number, dev: number, keep: (v: number) => boolean,
   ) {
     const g = this.grid;
     const z = this.camera.zoom, ox = this.layer.x, oy = this.layer.y;
     const w = this.width, h = this.height;
+    const px = this.pxX, py = this.pxY;
+    const back = Math.floor(dev / 2);
     for (let x = Math.floor(x0 / step) * step; x <= x1; x += step) {
       if (!keep(x)) continue;
-      const sx = x * z + ox;
-      g.moveTo(sx, 0).lineTo(sx, h);
+      const dx = Math.round((x * z + ox) * px) - back;
+      g.rect(dx / px, 0, dev / px, h);
     }
     for (let y = Math.floor(y0 / step) * step; y <= y1; y += step) {
       if (!keep(y)) continue;
-      const sy = y * z + oy;
-      g.moveTo(0, sy).lineTo(w, sy);
+      const dy = Math.round((y * z + oy) * py) - back;
+      g.rect(0, dy / py, w, dev / py);
     }
   }
 
