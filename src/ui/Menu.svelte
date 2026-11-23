@@ -1,6 +1,7 @@
 <script lang="ts">
   import { BACKDROPS, type Backdrop, type Editor } from '../engine/editor';
   import { rgbToHex } from '../engine/color';
+  import { openFromFile, saveToFile } from '../engine/fileio';
 
   let { editor, onclose }: { editor: Editor; onclose: () => void } = $props();
   // svelte-ignore state_referenced_locally
@@ -84,6 +85,9 @@
       </button>
     {/each}
   </div>
+  <div class="divider"></div>
+  <button class="item" onclick={() => { onclose(); saveToFile(editor); }}>Сохранить файл</button>
+  <button class="item" onclick={() => { onclose(); openFromFile(editor); }}>Открыть файл…</button>
   <div class="divider"></div>
   <button class="item" onclick={() => fileInput.click()}>Добавить референс…</button>
   <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={onRefFile} />

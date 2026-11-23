@@ -1,5 +1,6 @@
 import { EMPTY, rgbToPixel } from './color';
 import type { Editor, Tool } from './editor';
+import { openFromFile, saveToFile } from './fileio';
 
 /**
  * Input model:
@@ -440,6 +441,8 @@ export class InputController {
     }
     if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? ed.redo() : ed.undo(); return; }
     if (mod && k === 'y') { e.preventDefault(); ed.redo(); return; }
+    if (mod && k === 's') { e.preventDefault(); saveToFile(ed); return; }
+    if (mod && k === 'o') { e.preventDefault(); openFromFile(ed); return; }
     if (mod && k === 'x') { e.preventDefault(); ed.cutSelection(); return; }
     if (mod && k === 'c') { e.preventDefault(); ed.copySelection(); return; }
     // Ctrl+V is handled by the 'paste' event (main.ts) so a system clipboard image can win.

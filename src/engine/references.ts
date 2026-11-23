@@ -108,6 +108,29 @@ export class References {
     del(id, db).catch(() => {});
   }
 
+  /** All references with their image data, for saving to a file. */
+  snapshot(): { meta: Omit<RefImage, 'url'>; blob: Blob }[] {
+    return this.items.get().flatMap((r) => {
+      const blob = this.blobs.get(r.id);
+      if (!blob) return [];
+      const { url: _url, ...meta } = r;
+      return [{ meta, blob }];
+    });
+  }
+
+  /** Replace every reference (used when opening a file). */
+  async replaceAll(list: { meta: Omit<RefImage, 'url'>; blob: Blob }[]) {
+    for (const r of this.items.get()) this.remove(r.id);
+    const items: RefImage[] = [];
+    for (const { meta, blob } of list) {
+      this.blobs.set(meta.id, blob);
+      items.push({ ...meta, url: URL.createObjectURL(blob) });
+    }
+    this.items.set(items);
+    this.active.set(null);
+    for (const r of items) this.save(r.id, 0);
+  }
+
   /** Color (0xRRGGBB) at normalized position (u, v) in the image, or null if transparent. */
   async colorAt(id: string, u: number, v: number): Promise<number | null> {
     let img = this.pixels.get(id);

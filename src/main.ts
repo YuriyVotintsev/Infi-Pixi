@@ -4,6 +4,7 @@ import App from './ui/App.svelte';
 import { Editor } from './engine/editor';
 import { InputController } from './engine/input';
 import { startUpdateChecks } from './ui/updates';
+import { EXTENSION, openFromFile } from './engine/fileio';
 
 if (new URLSearchParams(location.search).has('debug')) {
   import('eruda').then(({ default: eruda }) => eruda.init());
@@ -29,6 +30,10 @@ async function start() {
   window.addEventListener('drop', (e) => {
     e.preventDefault();
     for (const file of e.dataTransfer?.files ?? []) {
+      if (file.name.toLowerCase().endsWith(EXTENSION)) {
+        openFromFile(editor, file);
+        return;
+      }
       if (file.type.startsWith('image/')) editor.addReference(file, file.name.replace(/\.[^.]+$/, ''));
     }
   });
