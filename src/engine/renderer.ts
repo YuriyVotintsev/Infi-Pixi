@@ -1,4 +1,4 @@
-import { Application, BufferImageSource, Container, Graphics, Sprite, Texture } from 'pixi.js';
+import { Application, BufferImageSource, Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js';
 import type { Camera } from './camera';
 import { CHUNK, type Chunk, type World } from './world';
 
@@ -16,6 +16,8 @@ export interface Hover {
 /** Below this zoom the per-pixel grid is hidden. */
 const GRID_MIN_ZOOM = 8;
 export const BG_COLOR = 0xcfd0d8;
+/** On-screen size of one transparency-checker cell, in CSS pixels. */
+const CHECKER_CSS = 8;
 
 /**
  * Renders the world on demand (no constant ticker) to save battery:
@@ -27,6 +29,18 @@ export class Renderer {
   private camera!: Camera;
   private layer = new Container();
   private grid = new Graphics();
+  /** 2×2 texels, tiled and scaled up to draw the transparency checkerboard. */
+  private checkerData = new Uint8Array(16);
+  private checkerSource = new BufferImageSource({
+    resource: this.checkerData,
+    width: 2,
+    height: 2,
+    scaleMode: 'nearest',
+    autoGenerateMipmaps: false,
+  });
+  private checker = new TilingSprite({ texture: new Texture({ source: this.checkerSource }) });
+  /** Grid line color, chosen to contrast with the checker. */
+  private gridColor = 0x000000;
   private cursor = new Graphics();
   private views = new Map<Chunk, ChunkView>();
   private queued = false;
@@ -62,7 +76,7 @@ export class Renderer {
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     host.appendChild(canvas);
-    this.app.stage.addChild(this.layer, this.grid, this.cursor);
+    this.app.stage.addChild(this.checker, this.layer, this.grid, this.cursor);
 
     for (const c of world.chunks.values()) this.addChunk(c);
     world.onChunkAdded = (c) => this.addChunk(c);
@@ -128,6 +142,22 @@ export class Renderer {
     this.requestRender();
   }
 
+  /** Set the two checkerboard colors (0xRRGGBB). */
+  setChecker(a: number, b: number) {
+    const d = this.checkerData;
+    // Texels: (0,0)=a (1,0)=b / (0,1)=b (1,1)=a
+    [a, b, b, a].forEach((c, i) => {
+      d[i * 4] = (c >> 16) & 0xff;
+      d[i * 4 + 1] = (c >> 8) & 0xff;
+      d[i * 4 + 2] = c & 0xff;
+      d[i * 4 + 3] = 0xff;
+    });
+    this.checkerSource.update();
+    const lum = (c: number) => 0.299 * ((c >> 16) & 0xff) + 0.587 * ((c >> 8) & 0xff) + 0.114 * (c & 0xff);
+    this.gridColor = (lum(a) + lum(b)) / 2 < 110 ? 0xffffff : 0x000000;
+    this.requestRender();
+  }
+
   requestRender() {
     if (this.queued) return;
     this.queued = true;
@@ -147,6 +177,13 @@ export class Renderer {
     // Snap the offset to the device-pixel grid so pixel edges stay crisp.
     this.layer.position.set(Math.round(cam.x * this.pxX) / this.pxX, Math.round(cam.y * this.pxY) / this.pxY);
     this.layer.scale.set(z);
+
+    // Checkerboard: fixed on-screen cell size (whole device pixels), scrolls with the canvas.
+    const cell = Math.max(1, Math.round(CHECKER_CSS * this.pxX)) / this.pxX;
+    this.checker.width = this.width;
+    this.checker.height = this.height;
+    this.checker.tileScale.set(cell);
+    this.checker.tilePosition.set(this.layer.x, this.layer.y);
 
     // Cull chunks outside the viewport.
     const [x0, y0] = cam.toWorld(0, 0);
@@ -182,7 +219,7 @@ export class Renderer {
       const fade = Math.min(1, (lv.step * z - lv.minGap) / lv.minGap + 0.35);
       const coarser = levels.slice(i + 1).map((l) => l.step);
       this.gridLines(x0, y0, x1, y1, lv.step, (v) => v !== 0 && !coarser.some((c) => v % c === 0));
-      g.stroke({ width: 1, color: 0x000000, alpha: lv.alpha * fade, pixelLine: true });
+      g.stroke({ width: 1, color: this.gridColor, alpha: lv.alpha * fade, pixelLine: true });
     });
 
     // Origin axes.

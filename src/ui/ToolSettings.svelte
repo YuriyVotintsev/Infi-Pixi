@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Editor } from '../engine/editor';
+  import { BACKDROPS, type Editor } from '../engine/editor';
   import { MAX_SIZE } from '../engine/input';
   import { rgbToHex } from '../engine/color';
   import Icon from './Icon.svelte';
@@ -9,7 +9,8 @@
   // svelte-ignore state_referenced_locally
   const size = editor.sizeStore(tool)!;
   // svelte-ignore state_referenced_locally
-  const { color } = editor;
+  const { color, backdrop } = editor;
+  const chk = $derived(BACKDROPS[$backdrop].colors.map(rgbToHex));
 
   const QUICK = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32];
   const title = $derived(tool === 'pen' ? 'Карандаш' : 'Ластик');
@@ -25,7 +26,7 @@
     <span class="title">{title}</span>
   </div>
 
-  <div class="row">
+  <div class="row" style:--a={chk[0]} style:--b={chk[1]}>
     <div class="preview" style:width="{$size * cell}px" style:height="{$size * cell}px"
       style:background={tool === 'pen' ? rgbToHex($color) : 'transparent'}
       class:eraser={tool === 'eraser'}
@@ -79,7 +80,7 @@
     display: grid;
     place-items: center;
     border-radius: 10px;
-    background: #cfd0d8;
+    background: repeating-conic-gradient(var(--a) 0 25%, var(--b) 0 50%) 0 0 / 16px 16px;
   }
   .preview {
     max-width: 76px;
@@ -87,13 +88,9 @@
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
   }
   .preview.eraser {
-    background-image:
-      linear-gradient(45deg, #fff 25%, transparent 25%, transparent 75%, #fff 75%),
-      linear-gradient(45deg, #fff 25%, transparent 25%, transparent 75%, #fff 75%);
-    background-color: #e6e6ea;
-    background-size: calc(var(--cell) * 2) calc(var(--cell) * 2);
-    background-position: 0 0, var(--cell) var(--cell);
-    outline: 1px dashed rgba(0, 0, 0, 0.5);
+    box-shadow: none;
+    outline: 1px dashed rgba(0, 0, 0, 0.6);
+    background: rgba(255, 255, 255, 0.35) !important;
   }
   .stepper {
     display: flex;

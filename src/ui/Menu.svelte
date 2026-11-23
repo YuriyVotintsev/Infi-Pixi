@@ -1,9 +1,11 @@
 <script lang="ts">
-  import type { Editor } from '../engine/editor';
+  import { BACKDROPS, type Backdrop, type Editor } from '../engine/editor';
+  import { rgbToHex } from '../engine/color';
 
   let { editor, onclose }: { editor: Editor; onclose: () => void } = $props();
   // svelte-ignore state_referenced_locally
-  const { fingerDraw, showGrid } = editor;
+  const { fingerDraw, showGrid, backdrop } = editor;
+  const backdrops = Object.entries(BACKDROPS) as [Backdrop, (typeof BACKDROPS)[Backdrop]][];
 
   async function exportPNG(scale: number) {
     const blob = await editor.exportPNG(scale);
@@ -50,6 +52,23 @@
     <span>Сетка</span>
     <input type="checkbox" checked={$showGrid} onchange={(e) => showGrid.set(e.currentTarget.checked)} />
   </label>
+  <div class="item static">
+    <span>Фон</span>
+  </div>
+  <div class="seg" role="radiogroup" aria-label="Фон">
+    {#each backdrops as [id, b] (id)}
+      <button
+        class="seg-btn"
+        class:active={$backdrop === id}
+        role="radio"
+        aria-checked={$backdrop === id}
+        onclick={() => backdrop.set(id)}
+      >
+        <span class="chk" style:--a={rgbToHex(b.colors[0])} style:--b={rgbToHex(b.colors[1])}></span>
+        {b.label}
+      </button>
+    {/each}
+  </div>
   <div class="divider"></div>
   <button class="item" onclick={() => exportPNG(1)}>Экспорт PNG 1×</button>
   <button class="item" onclick={() => exportPNG(8)}>Экспорт PNG 8×</button>
@@ -94,6 +113,39 @@
     width: 20px;
     height: 20px;
     accent-color: var(--accent);
+  }
+  .static {
+    min-height: 32px;
+    cursor: default;
+  }
+  .seg {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 0 4px 6px;
+  }
+  .seg-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 2px;
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--fg-dim);
+    border: 1px solid transparent;
+  }
+  .seg-btn.active {
+    color: var(--fg);
+    border-color: var(--accent);
+    background: rgba(91, 140, 255, 0.12);
+  }
+  .chk {
+    width: 32px;
+    height: 20px;
+    border-radius: 4px;
+    background: repeating-conic-gradient(var(--a) 0 25%, var(--b) 0 50%) 0 0 / 8px 8px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
   }
   .danger {
     color: #ff6b6b;

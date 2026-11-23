@@ -228,7 +228,8 @@
   }
   .build {
     font: 11px ui-monospace, monospace;
-    color: rgba(0, 0, 0, 0.45);
+    /* Readable on light and dark checker backgrounds. */
+    color: rgba(128, 128, 136, 0.9);
   }
   .top-right {
     position: absolute;

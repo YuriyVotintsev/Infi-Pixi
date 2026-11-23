@@ -9,6 +9,14 @@ import { findPalette } from './palettes';
 
 export type Tool = 'pen' | 'eraser' | 'picker';
 
+export type Backdrop = 'light' | 'medium' | 'dark';
+/** Transparency checker presets: two alternating colors each. */
+export const BACKDROPS: Record<Backdrop, { label: string; colors: [number, number] }> = {
+  light: { label: 'Светлый', colors: [0xf4f4f6, 0xdcdce2] },
+  medium: { label: 'Средний', colors: [0xa4a4ac, 0x8e8e98] },
+  dark: { label: 'Тёмный', colors: [0x3a3a42, 0x2c2c33] },
+};
+
 /**
  * Owns the engine pieces and exposes observable state + actions for the UI.
  * Framework-agnostic: the UI talks to it only through stores and methods.
@@ -34,6 +42,7 @@ export class Editor {
   readonly palette = store<number[]>([]);
   readonly fingerDraw = persisted<boolean>('fingerDraw', false);
   readonly showGrid = persisted<boolean>('showGrid', true);
+  readonly backdrop = persisted<Backdrop>('backdrop', 'light');
   /**
    * Zoom shown to the user, in *physical* screen pixels per art pixel:
    * 1× means one art pixel = one device pixel. The camera itself works in CSS pixels.
@@ -67,6 +76,10 @@ export class Editor {
       this.canRedo.set(this.history.canRedo);
       this.changed();
     };
+    this.backdrop.subscribe((b) => {
+      const [a, c] = (BACKDROPS[b] ?? BACKDROPS.light).colors;
+      this.renderer.setChecker(a, c);
+    });
     this.showGrid.subscribe((v) => {
       this.renderer.showGrid = v;
       this.renderer.requestRender();
