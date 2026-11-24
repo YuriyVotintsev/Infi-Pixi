@@ -55,6 +55,8 @@ export class InputController {
   private mousePan: { id: number; last: Pt } | null = null;
   private spaceDown = false;
   private penDown = false;
+  /** Shift held (desktop): line tool snaps angles. */
+  private shift = false;
 
   constructor(private editor: Editor) {
     this.el = editor.renderer.canvas;
@@ -112,6 +114,12 @@ export class InputController {
     r.requestRender();
   }
 
+  /** Screen position of a pixel's centre (inverse of pixelAt). */
+  private toScreenCenter(px: Pt): Pt {
+    const [x, y] = this.editor.camera.toScreen(px.x + 0.5, px.y + 0.5);
+    return { x, y };
+  }
+
   // ---------- stroke ----------
 
   private startStroke(e: PointerEvent, tool: Tool, override: boolean) {
@@ -158,6 +166,17 @@ export class InputController {
       return;
     }
     if (s.last && s.last.x === px.x && s.last.y === px.y) return;
+    if (s.tool === 'line') {
+      // Live preview: undo the previous preview and draw start → current point.
+      const a = s.start ?? px;
+      s.start = a;
+      const b = this.shift || ed.lineSnap.get() ? snapLine(a, px) : px;
+      ed.history.rollbackCurrent();
+      this.line(a.x, a.y, b.x, b.y, s.value);
+      s.last = px;
+      ed.renderer.requestRender();
+      return;
+    }
     if (s.tool === 'select') {
       if (s.selMode === 'move') ed.selection.updateMove(px.x, px.y);
       else ed.selection.updateMarquee(px.x, px.y);
@@ -285,6 +304,7 @@ export class InputController {
 
   private onDown = (e: PointerEvent) => {
     e.preventDefault();
+    this.shift = e.shiftKey;
     const ed = this.editor;
     ed.lastPointer.set(e.pointerType === 'pen' ? 'pen' : e.pointerType === 'mouse' ? 'mouse' : 'touch');
     try {
@@ -335,6 +355,16 @@ export class InputController {
 
   private onMove = (e: PointerEvent) => {
     const p = this.local(e);
+    if (this.shift !== e.shiftKey && this.stroke?.tool === 'line') {
+      // Shift toggled mid-drag: redraw the preview with/without snapping.
+      this.shift = e.shiftKey;
+      if (this.stroke.last) {
+        const last = this.stroke.last;
+        this.stroke.last = null;
+        this.continueStroke(this.toScreenCenter(last));
+      }
+    }
+    this.shift = e.shiftKey;
 
     if (e.pointerType === 'touch') {
       if (this.ignored.has(e.pointerId) || !this.touches.has(e.pointerId)) return;
@@ -466,6 +496,7 @@ export class InputController {
       case 'e': ed.tool.set('eraser'); break;
       case 'i': ed.tool.set('picker'); break;
       case 'm': ed.tool.set('select'); break;
+      case 'l': ed.tool.set('line'); break;
       case '[': ed.sizeStore(ed.tool.get())?.update((n) => Math.max(1, n - 1)); break;
       case ']': ed.sizeStore(ed.tool.get())?.update((n) => Math.min(MAX_SIZE, n + 1)); break;
       case '0': ed.resetView(); break;
@@ -483,4 +514,27 @@ export class InputController {
       if (!this.mousePan) this.el.style.cursor = '';
     }
   };
+}
+
+/** Directions with pixel-clean slopes: 0°, 1:2, 45°, 2:1, 90° (and mirrors). */
+const SNAP_DIRS: [number, number][] = [
+  [1, 0], [2, 1], [1, 1], [1, 2], [0, 1], [-1, 2], [-1, 1], [-2, 1],
+];
+
+/** Snap the end point b so that a→b follows the nearest pixel-clean direction. */
+export function snapLine(a: Pt, b: Pt): Pt {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  if (dx === 0 && dy === 0) return b;
+  let best = b, bestErr = Infinity;
+  for (const [ux, uy] of SNAP_DIRS) {
+    // Project onto the direction; whole steps keep the pattern clean.
+    const t = Math.round((dx * ux + dy * uy) / (ux * ux + uy * uy));
+    const px = a.x + t * ux, py = a.y + t * uy;
+    const err = (px - b.x) ** 2 + (py - b.y) ** 2;
+    if (err < bestErr) {
+      bestErr = err;
+      best = { x: px, y: py };
+    }
+  }
+  return best;
 }

@@ -66,6 +66,14 @@ export class History {
     this.onChange();
   }
 
+  /** Undo the in-progress stroke's pixels but keep it open (live previews, e.g. the line tool). */
+  rollbackCurrent() {
+    const s = this.current;
+    if (!s) return;
+    for (let i = s.size - 1; i >= 0; i--) this.world.setPixel(s.xs[i], s.ys[i], s.olds[i]);
+    this.current = new Stroke();
+  }
+
   /** Revert the in-progress stroke without recording it. */
   cancel() {
     const s = this.current;

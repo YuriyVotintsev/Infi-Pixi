@@ -4,7 +4,7 @@
   import { rgbToHex } from '../engine/color';
   import Icon from './Icon.svelte';
 
-  let { editor, tool }: { editor: Editor; tool: 'pen' | 'eraser' } = $props();
+  let { editor, tool }: { editor: Editor; tool: 'pen' | 'eraser' | 'line' } = $props();
 
   // svelte-ignore state_referenced_locally
   const size = editor.sizeStore(tool)!;
@@ -13,7 +13,9 @@
   const chk = $derived(BACKDROPS[$backdrop].colors.map(rgbToHex));
 
   const QUICK = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32];
-  const title = $derived(tool === 'pen' ? 'Карандаш' : 'Ластик');
+  const title = $derived(tool === 'pen' ? 'Карандаш' : tool === 'line' ? 'Линия' : 'Ластик');
+  // svelte-ignore state_referenced_locally
+  const { lineSnap } = editor;
 
   const set = (n: number) => size.set(Math.max(1, Math.min(MAX_SIZE, Math.round(n))));
   // Preview cell: how big one art pixel is drawn, so the whole brush fits in 72px.
@@ -28,7 +30,7 @@
 
   <div class="row" style:--a={chk[0]} style:--b={chk[1]}>
     <div class="preview" style:width="{$size * cell}px" style:height="{$size * cell}px"
-      style:background={tool === 'pen' ? rgbToHex($color) : 'transparent'}
+      style:background={tool !== 'eraser' ? rgbToHex($color) : 'transparent'}
       class:eraser={tool === 'eraser'}
       style:--cell="{cell}px"></div>
   </div>
@@ -55,6 +57,16 @@
       <button class="q" class:active={$size === n} onclick={() => set(n)}>{n}</button>
     {/each}
   </div>
+
+  {#if tool === 'line'}
+    <label class="toggle">
+      <span>
+        Привязка углов
+        <small>0°, 1:2, 45°, 2:1, 90° · на ПК также Shift</small>
+      </span>
+      <input type="checkbox" checked={$lineSnap} onchange={(e) => lineSnap.set(e.currentTarget.checked)} />
+    </label>
+  {/if}
 </div>
 
 <style>
@@ -129,6 +141,23 @@
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.05);
     font-variant-numeric: tabular-nums;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 44px;
+  }
+  .toggle small {
+    display: block;
+    font-size: 11px;
+    color: var(--fg-dim);
+  }
+  .toggle input {
+    width: 22px;
+    height: 22px;
+    accent-color: var(--accent);
   }
   .q.active {
     background: var(--accent);

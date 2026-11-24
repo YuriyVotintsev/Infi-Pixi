@@ -12,7 +12,7 @@
 
   let { editor }: { editor: Editor } = $props();
   // svelte-ignore state_referenced_locally
-  const { tool, color, penSize, eraserSize, zoom, canUndo, canRedo } = editor;
+  const { tool, color, penSize, eraserSize, lineSize, zoom, canUndo, canRedo } = editor;
   // svelte-ignore state_referenced_locally
   const selState = editor.selection.state;
   const showSelBar = $derived($tool === 'select' && ($selState.active || $selState.hasClipboard));
@@ -21,7 +21,8 @@
    * Bottom panel. 'palette' is the quick swatch strip (tap on the color button);
    * the rest are settings, opened by a long press on their toolbar button.
    */
-  type Panel = null | 'palette' | 'palette-settings' | 'pen' | 'eraser';
+  type Panel = null | 'palette' | 'palette-settings' | 'pen' | 'eraser' | 'line';
+  const hasSettings = (t: Tool): t is 'pen' | 'eraser' | 'line' => t === 'pen' || t === 'eraser' || t === 'line';
   let panel = $state<Panel>(null);
   const isSettings = $derived(panel !== null && panel !== 'palette');
   let menuOpen = $state(false);
@@ -41,6 +42,7 @@
 
   const tools: { id: Tool; label: string }[] = [
     { id: 'pen', label: 'Карандаш' },
+    { id: 'line', label: 'Линия' },
     { id: 'eraser', label: 'Ластик' },
     { id: 'picker', label: 'Пипетка' },
     { id: 'select', label: 'Выделение' },
@@ -54,11 +56,11 @@
   function longTool(t: Tool) {
     tool.set(t);
     // Only pen and eraser have settings.
-    panel = t === 'pen' || t === 'eraser' ? t : null;
+    panel = hasSettings(t) ? t : null;
   }
 
   function sizeOf(t: Tool): number {
-    return t === 'pen' ? $penSize : t === 'eraser' ? $eraserSize : 1;
+    return t === 'pen' ? $penSize : t === 'eraser' ? $eraserSize : t === 'line' ? $lineSize : 1;
   }
 
   // ---- fullscreen ----
@@ -178,7 +180,7 @@
     <Palette {editor} onclose={() => (panel = null)} />
   {:else if panel === 'palette-settings'}
     <Palette {editor} full onclose={() => (panel = null)} />
-  {:else if panel === 'pen' || panel === 'eraser'}
+  {:else if panel === 'pen' || panel === 'eraser' || panel === 'line'}
     {#key panel}
       <ToolSettings {editor} tool={panel} />
     {/key}
@@ -213,10 +215,10 @@
         class:open={panel === t.id}
         use:press={{ tap: () => tapTool(t.id), long: () => longTool(t.id) }}
         aria-label={t.label}
-        title={t.id === 'pen' || t.id === 'eraser' ? `${t.label} (удерживать: настройки)` : t.label}
+        title={hasSettings(t.id) ? `${t.label} (удерживать: настройки)` : t.label}
       >
         <Icon name={t.id} />
-        {#if (t.id === 'pen' || t.id === 'eraser') && sizeOf(t.id) > 1}
+        {#if hasSettings(t.id) && sizeOf(t.id) > 1}
           <span class="badge">{sizeOf(t.id)}</span>
         {/if}
       </button>
@@ -337,6 +339,23 @@
   }
   .icon-btn {
     position: relative;
+  }
+  /* Phones: 8 toolbar buttons must still fit in one row. */
+  @media (max-width: 440px) {
+    .toolbar .icon-btn {
+      width: 40px;
+    }
+    .toolbar .sep {
+      margin: 0 2px;
+    }
+  }
+  @media (max-width: 370px) {
+    .toolbar {
+      gap: 0;
+    }
+    .toolbar .icon-btn {
+      width: 37px;
+    }
   }
   .icon-btn.open:not(.active) {
     background: rgba(255, 255, 255, 0.1);

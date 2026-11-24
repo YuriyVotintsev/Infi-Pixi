@@ -9,7 +9,7 @@ import { findPalette } from './palettes';
 import { Selection } from './selection';
 import { References } from './references';
 
-export type Tool = 'pen' | 'eraser' | 'picker' | 'select';
+export type Tool = 'pen' | 'eraser' | 'picker' | 'select' | 'line';
 
 export type Backdrop = 'light' | 'medium' | 'dark';
 /** Transparency checker presets: two alternating colors each. */
@@ -37,6 +37,9 @@ export class Editor {
   /** Brush sizes, kept separately per tool. */
   readonly penSize = persisted<number>('penSize', legacyNumber('brushSize', 1));
   readonly eraserSize = persisted<number>('eraserSize', 1);
+  readonly lineSize = persisted<number>('lineSize', 1);
+  /** Line tool: constrain to pixel-clean angles (0°, 1:2, 45°, 2:1, 90°). */
+  readonly lineSnap = persisted<boolean>('lineSnap', false);
   /** Selected palette preset. */
   readonly paletteId = persisted<string>('paletteId', 'infi');
   /** User edits (added/removed colors) per preset id; absent = preset as shipped. */
@@ -100,6 +103,7 @@ export class Editor {
     };
     this.penSize.subscribe(refreshHover);
     this.eraserSize.subscribe(refreshHover);
+    this.lineSize.subscribe(refreshHover);
     this.tool.subscribe(refreshHover);
 
     const sel = this.selection;
@@ -252,7 +256,7 @@ export class Editor {
 
   /** Size store of a tool, or null for tools without a size. */
   sizeStore(tool: Tool) {
-    return tool === 'pen' ? this.penSize : tool === 'eraser' ? this.eraserSize : null;
+    return tool === 'pen' ? this.penSize : tool === 'eraser' ? this.eraserSize : tool === 'line' ? this.lineSize : null;
   }
 
   sizeFor(tool: Tool): number {
