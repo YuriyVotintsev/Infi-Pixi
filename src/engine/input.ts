@@ -189,18 +189,9 @@ export class InputController {
     ed.renderer.requestRender();
   }
 
-  /** Bresenham line, stamping the brush at each step. */
+  /** Line from (x0,y0) to (x1,y1) inclusive, stamping the brush on every pixel. */
   private line(x0: number, y0: number, x1: number, y1: number, value: number) {
-    const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    const dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    let err = dx + dy;
-    for (;;) {
-      this.stamp(x0, y0, value);
-      if (x0 === x1 && y0 === y1) break;
-      const e2 = 2 * err;
-      if (e2 >= dy) { err += dy; x0 += sx; }
-      if (e2 <= dx) { err += dx; y0 += sy; }
-    }
+    for (const [x, y] of linePixels(x0, y0, x1, y1)) this.stamp(x, y, value);
   }
 
   private stamp(x: number, y: number, value: number) {
@@ -516,24 +507,70 @@ export class InputController {
   };
 }
 
-/** Directions with pixel-clean slopes: 0°, 1:2, 45°, 2:1, 90° (and mirrors). */
-const SNAP_DIRS: [number, number][] = [
-  [1, 0], [2, 1], [1, 1], [1, 2], [0, 1], [-1, 2], [-1, 1], [-2, 1],
-];
+/**
+ * Pixels of a line, endpoints included.
+ *
+ * When the span is an exact multiple of the other (e.g. 16×8 pixels) the line is
+ * drawn as identical steps (2,2,2,…) — Bresenham would put single pixels at the
+ * ends (1,2,…,2,1). Otherwise plain Bresenham.
+ */
+export function linePixels(x0: number, y0: number, x1: number, y1: number): [number, number][] {
+  const ax = Math.abs(x1 - x0), ay = Math.abs(y1 - y0);
+  const sx = x1 >= x0 ? 1 : -1, sy = y1 >= y0 ? 1 : -1;
+  const out: [number, number][] = [];
+  const major = Math.max(ax, ay) + 1, minor = Math.min(ax, ay) + 1;
+  if (minor > 1 && major % minor === 0) {
+    const run = major / minor;
+    for (let i = 0; i < major; i++) {
+      const j = Math.floor(i / run);
+      out.push(ax >= ay ? [x0 + i * sx, y0 + j * sy] : [x0 + j * sx, y0 + i * sy]);
+    }
+    return out;
+  }
+  let x = x0, y = y0;
+  const dx = ax, dy = -ay;
+  let err = dx + dy;
+  for (;;) {
+    out.push([x, y]);
+    if (x === x1 && y === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x += sx; }
+    if (e2 <= dx) { err += dx; y += sy; }
+  }
+  return out;
+}
 
-/** Snap the end point b so that a→b follows the nearest pixel-clean direction. */
+/**
+ * Snap the end point b to the nearest pixel-clean line from a: horizontal,
+ * vertical, 45°, 2:1 or 1:2 — always a whole number of equal steps, so 2:1 lines
+ * are 2,2,2,… pixels with no single pixel at either end.
+ */
 export function snapLine(a: Pt, b: Pt): Pt {
   const dx = b.x - a.x, dy = b.y - a.y;
   if (dx === 0 && dy === 0) return b;
+  const ax = Math.abs(dx), ay = Math.abs(dy);
+  const sx = dx >= 0 ? 1 : -1, sy = dy >= 0 ? 1 : -1;
+  // A run of `run` pixels per step, `k` steps: the span is (run·k − 1, k − 1).
+  const stepped = (run: number, alongX: boolean): [number, number] => {
+    const kMajor = ((alongX ? ax : ay) + 1) / run, kMinor = (alongX ? ay : ax) + 1;
+    const k = Math.max(1, Math.round((kMajor + kMinor) / 2));
+    return alongX ? [run * k - 1, k - 1] : [k - 1, run * k - 1];
+  };
+  const d = Math.round((ax + ay) / 2);
+  const candidates: [number, number][] = [
+    [ax, 0], // horizontal
+    [0, ay], // vertical
+    [d, d], // 45°
+    stepped(2, true), // 2:1
+    stepped(2, false), // 1:2
+  ];
   let best = b, bestErr = Infinity;
-  for (const [ux, uy] of SNAP_DIRS) {
-    // Project onto the direction; whole steps keep the pattern clean.
-    const t = Math.round((dx * ux + dy * uy) / (ux * ux + uy * uy));
-    const px = a.x + t * ux, py = a.y + t * uy;
-    const err = (px - b.x) ** 2 + (py - b.y) ** 2;
+  for (const [ox, oy] of candidates) {
+    const p = { x: a.x + ox * sx, y: a.y + oy * sy };
+    const err = (p.x - b.x) ** 2 + (p.y - b.y) ** 2;
     if (err < bestErr) {
       bestErr = err;
-      best = { x: px, y: py };
+      best = p;
     }
   }
   return best;
