@@ -1,17 +1,13 @@
 <script lang="ts">
-  import { BACKDROPS, type Editor } from '../engine/editor';
+  import type { Editor } from '../engine/editor';
   import type { IsoEdges, IsoFace } from '../engine/isocube';
   import { MAX_SIZE } from '../engine/input';
-  import { rgbToHex } from '../engine/color';
   import Icon from './Icon.svelte';
 
   let { editor, tool }: { editor: Editor; tool: 'pen' | 'eraser' | 'line' | 'iso' } = $props();
 
   // svelte-ignore state_referenced_locally
   const size = editor.sizeStore(tool)!;
-  // svelte-ignore state_referenced_locally
-  const { color, backdrop } = editor;
-  const chk = $derived(BACKDROPS[$backdrop].colors.map(rgbToHex));
 
   const QUICK = [1, 2, 3, 4, 6, 8, 12, 16, 32];
   const TITLES = { pen: 'Карандаш', line: 'Линия', iso: 'Изометрический куб', eraser: 'Ластик' };
@@ -22,8 +18,6 @@
   const EDGES: [IsoEdges, string][] = [['all', 'Все'], ['front', 'Передние'], ['back', 'Задние']];
 
   const set = (n: number) => size.set(Math.max(1, Math.min(MAX_SIZE, Math.round(n))));
-  // Preview cell: how big one art pixel is drawn, so the whole brush fits in 32px.
-  const cell = $derived(Math.max(1, Math.floor(32 / Math.max($size, 4))));
 </script>
 
 <div class="panel settings" role="dialog" aria-label="Настройки: {title}">
@@ -33,15 +27,6 @@
   </div>
 
   <div class="size-row">
-    <div class="pv" style:--a={chk[0]} style:--b={chk[1]} title="Превью кисти">
-      <div
-        class="preview"
-        class:eraser={tool === 'eraser'}
-        style:width="{Math.min(32, $size * cell)}px"
-        style:height="{Math.min(32, $size * cell)}px"
-        style:background={tool !== 'eraser' ? rgbToHex($color) : 'transparent'}
-      ></div>
-    </div>
     <button class="step" onclick={() => set($size - 1)} disabled={$size <= 1} aria-label="Меньше">−</button>
     <span class="value">{$size}<small>px</small></span>
     <button class="step" onclick={() => set($size + 1)} disabled={$size >= MAX_SIZE} aria-label="Больше">+</button>
@@ -119,23 +104,6 @@
     display: flex;
     align-items: center;
     gap: 6px;
-  }
-  .pv {
-    width: 40px;
-    height: 40px;
-    flex: none;
-    display: grid;
-    place-items: center;
-    border-radius: 8px;
-    background: repeating-conic-gradient(var(--a) 0 25%, var(--b) 0 50%) 0 0 / 10px 10px;
-  }
-  .preview {
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
-  }
-  .preview.eraser {
-    box-shadow: none;
-    outline: 1px dashed rgba(0, 0, 0, 0.6);
-    background: rgba(255, 255, 255, 0.35) !important;
   }
   .step {
     width: 40px;
