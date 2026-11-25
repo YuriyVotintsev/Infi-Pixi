@@ -13,7 +13,7 @@
   const { color, backdrop } = editor;
   const chk = $derived(BACKDROPS[$backdrop].colors.map(rgbToHex));
 
-  const QUICK = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32];
+  const QUICK = [1, 2, 3, 4, 6, 8, 12, 16, 32];
   const TITLES = { pen: 'Карандаш', line: 'Линия', iso: 'Изометрический куб', eraser: 'Ластик' };
   const title = $derived(TITLES[tool]);
   // svelte-ignore state_referenced_locally
@@ -22,8 +22,8 @@
   const EDGES: [IsoEdges, string][] = [['all', 'Все'], ['front', 'Передние'], ['back', 'Задние']];
 
   const set = (n: number) => size.set(Math.max(1, Math.min(MAX_SIZE, Math.round(n))));
-  // Preview cell: how big one art pixel is drawn, so the whole brush fits in 72px.
-  const cell = $derived(Math.max(2, Math.floor(72 / Math.max($size, 4))));
+  // Preview cell: how big one art pixel is drawn, so the whole brush fits in 32px.
+  const cell = $derived(Math.max(1, Math.floor(32 / Math.max($size, 4))));
 </script>
 
 <div class="panel settings" role="dialog" aria-label="Настройки: {title}">
@@ -32,31 +32,22 @@
     <span class="title">{title}</span>
   </div>
 
-  <div class="row" style:--a={chk[0]} style:--b={chk[1]}>
-    <div class="preview" style:width="{$size * cell}px" style:height="{$size * cell}px"
-      style:background={tool !== 'eraser' ? rgbToHex($color) : 'transparent'}
-      class:eraser={tool === 'eraser'}
-      style:--cell="{cell}px"></div>
-  </div>
-
-  <div class="stepper">
+  <div class="size-row">
+    <div class="pv" style:--a={chk[0]} style:--b={chk[1]} title="Превью кисти">
+      <div
+        class="preview"
+        class:eraser={tool === 'eraser'}
+        style:width="{Math.min(32, $size * cell)}px"
+        style:height="{Math.min(32, $size * cell)}px"
+        style:background={tool !== 'eraser' ? rgbToHex($color) : 'transparent'}
+      ></div>
+    </div>
     <button class="step" onclick={() => set($size - 1)} disabled={$size <= 1} aria-label="Меньше">−</button>
     <span class="value">{$size}<small>px</small></span>
     <button class="step" onclick={() => set($size + 1)} disabled={$size >= MAX_SIZE} aria-label="Больше">+</button>
   </div>
 
-  <input
-    class="slider"
-    type="range"
-    min="1"
-    max={MAX_SIZE}
-    step="1"
-    value={$size}
-    oninput={(e) => set(+e.currentTarget.value)}
-    aria-label="Размер"
-  />
-
-  <div class="quick">
+  <div class="quick" role="group" aria-label="Размер">
     {#each QUICK as n (n)}
       <button class="q" class:active={$size === n} onclick={() => set(n)}>{n}</button>
     {/each}
@@ -124,16 +115,21 @@
     color: var(--fg);
     font-weight: 600;
   }
-  .row {
-    height: 80px;
+  .size-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pv {
+    width: 40px;
+    height: 40px;
+    flex: none;
     display: grid;
     place-items: center;
-    border-radius: 10px;
-    background: repeating-conic-gradient(var(--a) 0 25%, var(--b) 0 50%) 0 0 / 16px 16px;
+    border-radius: 8px;
+    background: repeating-conic-gradient(var(--a) 0 25%, var(--b) 0 50%) 0 0 / 10px 10px;
   }
   .preview {
-    max-width: 76px;
-    max-height: 76px;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
   }
   .preview.eraser {
@@ -141,42 +137,35 @@
     outline: 1px dashed rgba(0, 0, 0, 0.6);
     background: rgba(255, 255, 255, 0.35) !important;
   }
-  .stepper {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
   .step {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
+    flex: none;
     border-radius: 10px;
-    font-size: 22px;
+    font-size: 20px;
     background: rgba(255, 255, 255, 0.06);
   }
   .value {
-    font-size: 22px;
+    flex: 1;
+    text-align: center;
+    font-size: 18px;
     font-variant-numeric: tabular-nums;
   }
   .value small {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--fg-dim);
     margin-left: 2px;
   }
-  .slider {
-    width: 100%;
-    accent-color: var(--accent);
-    height: 28px;
-    touch-action: pan-x;
-  }
   .quick {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 4px;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 3px;
   }
   .q {
-    height: 36px;
-    border-radius: 8px;
+    height: 30px;
+    border-radius: 7px;
     background: rgba(255, 255, 255, 0.05);
+    font-size: 13px;
     font-variant-numeric: tabular-nums;
   }
   .opt {
