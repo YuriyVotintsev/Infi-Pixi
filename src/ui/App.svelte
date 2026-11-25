@@ -4,6 +4,7 @@
   import Palette from './Palette.svelte';
   import ToolSettings from './ToolSettings.svelte';
   import References from './References.svelte';
+  import IsoHandles from './IsoHandles.svelte';
   import { press } from './press';
   import Menu from './Menu.svelte';
   import ZoomMenu, { fmtZoom } from './ZoomMenu.svelte';
@@ -12,7 +13,7 @@
 
   let { editor }: { editor: Editor } = $props();
   // svelte-ignore state_referenced_locally
-  const { tool, color, penSize, eraserSize, lineSize, isoSize, isoPending, zoom, canUndo, canRedo } = editor;
+  const { tool, color, penSize, eraserSize, lineSize, isoSize, isoStage, zoom, canUndo, canRedo } = editor;
   // svelte-ignore state_referenced_locally
   const selState = editor.selection.state;
   const showSelBar = $derived($tool === 'select' && ($selState.active || $selState.hasClipboard));
@@ -109,6 +110,7 @@
 </script>
 
 <References {editor} />
+<IsoHandles {editor} />
 
 <div class="top-left build">{__BUILD_SHA__}</div>
 
@@ -188,13 +190,24 @@
     {/key}
   {/if}
 
-  {#if $isoPending && $tool === 'iso'}
+  {#if $isoStage && $tool === 'iso'}
+    {@const face = $isoStage === 'face'}
     <div class="panel isobar" role="status">
-      <span>Коснитесь и тяните, чтобы вытянуть куб</span>
-      <button class="icon-btn" onclick={() => editor.cancelIso()} aria-label="Убрать грань" title="Убрать грань (Esc)">
+      <span>{face ? 'Коснитесь и тяните, чтобы вытянуть куб' : 'Подправьте точками и примените'}</span>
+      <button
+        class="icon-btn"
+        onclick={() => editor.cancelIso()}
+        aria-label={face ? 'Убрать грань' : 'Убрать куб'}
+        title={face ? 'Убрать грань (Esc)' : 'Убрать куб (Esc)'}
+      >
         <Icon name="close" />
       </button>
-      <button class="icon-btn" onclick={() => editor.commitIso()} aria-label="Оставить только грань" title="Оставить только грань (Enter)">
+      <button
+        class="icon-btn apply"
+        onclick={() => editor.commitIso()}
+        aria-label={face ? 'Оставить только грань' : 'Применить куб'}
+        title={face ? 'Оставить только грань (Enter)' : 'Применить (Enter)'}
+      >
         <Icon name="check" />
       </button>
     </div>
@@ -255,7 +268,7 @@
 
     <div class="sep"></div>
 
-    <button class="icon-btn" onclick={() => editor.undo()} disabled={!$canUndo && !$selState.floating && !$isoPending} aria-label="Отменить">
+    <button class="icon-btn" onclick={() => editor.undo()} disabled={!$canUndo && !$selState.floating && !$isoStage} aria-label="Отменить">
       <Icon name="undo" />
     </button>
     <button class="icon-btn" onclick={() => editor.redo()} disabled={!$canRedo} aria-label="Повторить">
@@ -325,6 +338,10 @@
     padding: 4px 4px 4px 12px;
     font-size: 13px;
     color: var(--fg-dim);
+  }
+  .isobar .apply {
+    background: var(--accent);
+    color: #fff;
   }
   .isobar span {
     margin-right: 6px;

@@ -17,7 +17,7 @@
   const TITLES = { pen: 'Карандаш', line: 'Линия', iso: 'Изометрический куб', eraser: 'Ластик' };
   const title = $derived(TITLES[tool]);
   // svelte-ignore state_referenced_locally
-  const { lineSnap, isoFace, isoEdges } = editor;
+  const { lineSnap, isoFace, isoEdges, isoAdjust } = editor;
   const FACES: [IsoFace, string][] = [['auto', 'Авто'], ['top', 'Верх'], ['left', 'Левая'], ['right', 'Правая']];
   const EDGES: [IsoEdges, string][] = [['all', 'Все'], ['front', 'Передние'], ['back', 'Задние']];
 
@@ -82,6 +82,13 @@
         {/each}
       </div>
     </div>
+    <label class="toggle">
+      <span>
+        Подправлять перед применением
+        <small>Точки для размеров и положения, применить галочкой</small>
+      </span>
+      <input type="checkbox" checked={$isoAdjust} onchange={(e) => isoAdjust.set(e.currentTarget.checked)} />
+    </label>
   {/if}
 
   {#if tool === 'line'}
@@ -97,6 +104,10 @@
 
 <style>
   .settings {
+    max-height: calc(100dvh - 140px - var(--safe-t) - var(--safe-b));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
     padding: 12px;
     width: min(320px, 100%);
     display: flex;

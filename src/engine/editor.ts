@@ -8,7 +8,7 @@ import { CHUNK, World } from './world';
 import { findPalette } from './palettes';
 import { Selection } from './selection';
 import { References } from './references';
-import type { Box, IsoEdges, IsoFace, IsoPlane } from './isocube';
+import { boxPixels, type Box, type IsoEdges, type IsoFace, type IsoPlane } from './isocube';
 
 export type Tool = 'pen' | 'eraser' | 'picker' | 'select' | 'line' | 'iso';
 
@@ -49,8 +49,20 @@ export class Editor {
    * First face drawn and waiting to be extruded. Its pixels sit in an open
    * history stroke, so the finished box is a single undo step.
    */
-  iso: { plane: IsoPlane; face: Box } | null = null;
-  readonly isoPending = store(false);
+  iso: {
+    /** 'face': first face drawn, waiting to be extruded; 'edit': box shown with handles. */
+    stage: 'face' | 'edit';
+    plane: IsoPlane;
+    box: Box;
+    /** Pixel value and brush size the box is drawn with. */
+    value: number;
+    size: number;
+  } | null = null;
+  readonly isoStage = store<'face' | 'edit' | null>(null);
+  /** Box currently shown (for the handles UI). */
+  readonly isoBox = store<Box | null>(null);
+  /** Show handles to adjust a box before applying it. */
+  readonly isoAdjust = persisted<boolean>('isoAdjust', true);
   /** Selected palette preset. */
   readonly paletteId = persisted<string>('paletteId', 'infi');
   /** User edits (added/removed colors) per preset id; absent = preset as shipped. */
@@ -127,6 +139,9 @@ export class Editor {
       if (t !== 'select') sel.clear();
       if (t !== 'iso') this.commitIso();
     });
+    this.isoEdges.subscribe(() => {
+      if (this.iso?.stage === 'edit') this.setIsoBox(this.iso.box);
+    });
 
     this.zoom.set(this.camera.zoom * this.dpr);
     this.view.set({ x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom });
@@ -163,22 +178,55 @@ export class Editor {
     this.history.redo();
   }
 
-  // ---- isometric box: pending first face ----
+  // ---- isometric box (pending face / box being adjusted) ----
 
-  /** Keep the pending face as drawn (flat) and finish. */
+  /**
+   * Replace the open stroke's preview with these pixels. Stamps a square brush
+   * of `size` (same as the pen) on every pixel.
+   */
+  paintPreview(pixels: [number, number][], value: number, size: number) {
+    const h = this.history;
+    h.rollbackCurrent();
+    const d = Math.floor((size - 1) / 2);
+    for (const [x, y] of pixels)
+      for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) h.set(x - d + i, y - d + j, value);
+    this.renderer.requestRender();
+  }
+
+  /** Enter a pending iso stage with the given box (pixels already drawn or redrawn here). */
+  setIso(stage: 'face' | 'edit', plane: IsoPlane, box: Box, value: number, size: number) {
+    this.iso = { stage, plane, box, value, size };
+    this.isoStage.set(stage);
+    this.setIsoBox(box);
+  }
+
+  /** Redraw the pending box (e.g. while a handle is dragged). */
+  setIsoBox(box: Box) {
+    const iso = this.iso;
+    if (!iso) return;
+    iso.box = box;
+    this.isoBox.set(box);
+    this.paintPreview(boxPixels(box, iso.stage === 'edit' ? this.isoEdges.get() : 'all'), iso.value, iso.size);
+  }
+
+  private endIso() {
+    this.iso = null;
+    this.isoStage.set(null);
+    this.isoBox.set(null);
+  }
+
+  /** Apply the pending face/box as drawn. */
   commitIso() {
     if (!this.iso) return;
-    this.iso = null;
-    this.isoPending.set(false);
+    this.endIso();
     this.history.commit();
     this.changed();
   }
 
-  /** Remove the pending face. */
+  /** Remove the pending face/box. */
   cancelIso() {
     if (!this.iso) return;
-    this.iso = null;
-    this.isoPending.set(false);
+    this.endIso();
     this.history.cancel();
     this.changed();
   }

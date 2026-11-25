@@ -3,6 +3,7 @@ import type { Editor, Tool } from './editor';
 import { openFromFile, saveToFile } from './fileio';
 import { boxPixels, extrude, faceBox, pickPlane, type Box, type IsoPlane } from './isocube';
 
+
 /**
  * Input model:
  *  - pen:   draws with the current tool. Eraser end → eraser. Barrel button → picker.
@@ -158,15 +159,16 @@ export class InputController {
       const px = this.pixelAt(this.local(e));
       this.stroke.start = px;
       this.stroke.last = px;
-      if (ed.iso) {
+      // A box being adjusted is applied by starting the next one.
+      if (ed.iso?.stage === 'edit') ed.commitIso();
+      if (ed.iso?.stage === 'face') {
         // Second step: the pending face's stroke is still open; extrude it.
         this.stroke.isoMode = 'extrude';
       } else {
         ed.selection.clear();
         ed.history.begin();
         this.stroke.isoMode = 'face';
-        this.stamp(px.x, px.y, this.stroke.value);
-        ed.renderer.requestRender();
+        ed.paintPreview([[px.x, px.y]], this.stroke.value, this.strokeSize);
       }
       return;
     }
@@ -193,19 +195,16 @@ export class InputController {
     if (s.tool === 'iso') {
       const a = s.start!;
       const dx = px.x - a.x, dy = px.y - a.y;
-      let box: Box, edges = ed.isoEdges.get();
       if (s.isoMode === 'face') {
         s.isoPlane = pickPlane(dx, dy, ed.isoFace.get());
-        box = faceBox(a.x, a.y, dx, dy, s.isoPlane);
-        edges = 'all'; // a lone face shows all four sides
-      } else {
-        box = extrude(ed.iso!.face, ed.iso!.plane, dx, dy);
+        s.isoBox = faceBox(a.x, a.y, dx, dy, s.isoPlane);
+        // A lone face shows all four sides.
+        ed.paintPreview(boxPixels(s.isoBox, 'all'), s.value, this.strokeSize);
+      } else if (ed.iso) {
+        s.isoBox = extrude(ed.iso.box, ed.iso.plane, dx, dy);
+        ed.paintPreview(boxPixels(s.isoBox, ed.isoEdges.get()), ed.iso.value, ed.iso.size);
       }
-      s.isoBox = box;
-      ed.history.rollbackCurrent();
-      for (const [x, y] of boxPixels(box, edges)) this.stamp(x, y, s.value);
       s.last = px;
-      ed.renderer.requestRender();
       return;
     }
     if (s.tool === 'line') {
@@ -269,23 +268,22 @@ export class InputController {
           ed.history.cancel();
         } else {
           // Keep the stroke open: the next press extrudes this face.
-          ed.iso = { plane: s.isoPlane, face: s.isoBox };
-          ed.isoPending.set(true);
+          ed.setIso('face', s.isoPlane, s.isoBox, s.value, this.strokeSize);
         }
       } else if (ed.iso) {
+        const face = ed.iso.box;
         if (!commit) {
           // Cancelled extrusion: back to the flat face, still waiting.
-          ed.history.rollbackCurrent();
-          for (const [x, y] of boxPixels(ed.iso.face, 'all')) this.stamp(x, y, s.value);
+          ed.setIsoBox(face);
+        } else if (!moved || !s.isoBox) {
+          // A plain tap keeps just the face.
+          ed.setIsoBox(face);
+          ed.commitIso();
+        } else if (ed.isoAdjust.get()) {
+          // Show handles; applied with ✓ (or by starting another box).
+          ed.setIso('edit', ed.iso.plane, s.isoBox, ed.iso.value, ed.iso.size);
         } else {
-          // Extruded (or a plain tap: keep the flat face). Either way, done.
-          if (!moved) {
-            ed.history.rollbackCurrent();
-            for (const [x, y] of boxPixels(ed.iso.face, 'all')) this.stamp(x, y, s.value);
-          }
-          ed.iso = null;
-          ed.isoPending.set(false);
-          ed.history.commit();
+          ed.commitIso();
         }
       }
       ed.changed();
