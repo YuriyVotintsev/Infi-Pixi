@@ -12,7 +12,7 @@
 
   let { editor }: { editor: Editor } = $props();
   // svelte-ignore state_referenced_locally
-  const { tool, color, penSize, eraserSize, lineSize, zoom, canUndo, canRedo } = editor;
+  const { tool, color, penSize, eraserSize, lineSize, isoSize, isoPending, zoom, canUndo, canRedo } = editor;
   // svelte-ignore state_referenced_locally
   const selState = editor.selection.state;
   const showSelBar = $derived($tool === 'select' && ($selState.active || $selState.hasClipboard));
@@ -21,8 +21,9 @@
    * Bottom panel. 'palette' is the quick swatch strip (tap on the color button);
    * the rest are settings, opened by a long press on their toolbar button.
    */
-  type Panel = null | 'palette' | 'palette-settings' | 'pen' | 'eraser' | 'line';
-  const hasSettings = (t: Tool): t is 'pen' | 'eraser' | 'line' => t === 'pen' || t === 'eraser' || t === 'line';
+  type Panel = null | 'palette' | 'palette-settings' | 'pen' | 'eraser' | 'line' | 'iso';
+  type SettingsTool = 'pen' | 'eraser' | 'line' | 'iso';
+  const hasSettings = (t: Tool): t is SettingsTool => t === 'pen' || t === 'eraser' || t === 'line' || t === 'iso';
   let panel = $state<Panel>(null);
   const isSettings = $derived(panel !== null && panel !== 'palette');
   let menuOpen = $state(false);
@@ -43,6 +44,7 @@
   const tools: { id: Tool; label: string }[] = [
     { id: 'pen', label: 'Карандаш' },
     { id: 'line', label: 'Линия' },
+    { id: 'iso', label: 'Изометрический куб' },
     { id: 'eraser', label: 'Ластик' },
     { id: 'picker', label: 'Пипетка' },
     { id: 'select', label: 'Выделение' },
@@ -60,7 +62,7 @@
   }
 
   function sizeOf(t: Tool): number {
-    return t === 'pen' ? $penSize : t === 'eraser' ? $eraserSize : t === 'line' ? $lineSize : 1;
+    return t === 'pen' ? $penSize : t === 'eraser' ? $eraserSize : t === 'line' ? $lineSize : t === 'iso' ? $isoSize : 1;
   }
 
   // ---- fullscreen ----
@@ -180,10 +182,22 @@
     <Palette {editor} onclose={() => (panel = null)} />
   {:else if panel === 'palette-settings'}
     <Palette {editor} full onclose={() => (panel = null)} />
-  {:else if panel === 'pen' || panel === 'eraser' || panel === 'line'}
+  {:else if panel === 'pen' || panel === 'eraser' || panel === 'line' || panel === 'iso'}
     {#key panel}
       <ToolSettings {editor} tool={panel} />
     {/key}
+  {/if}
+
+  {#if $isoPending && $tool === 'iso'}
+    <div class="panel isobar" role="status">
+      <span>Коснитесь и тяните, чтобы вытянуть куб</span>
+      <button class="icon-btn" onclick={() => editor.cancelIso()} aria-label="Убрать грань" title="Убрать грань (Esc)">
+        <Icon name="close" />
+      </button>
+      <button class="icon-btn" onclick={() => editor.commitIso()} aria-label="Оставить только грань" title="Оставить только грань (Enter)">
+        <Icon name="check" />
+      </button>
+    </div>
   {/if}
 
   {#if showSelBar}
@@ -241,7 +255,7 @@
 
     <div class="sep"></div>
 
-    <button class="icon-btn" onclick={() => editor.undo()} disabled={!$canUndo && !$selState.floating} aria-label="Отменить">
+    <button class="icon-btn" onclick={() => editor.undo()} disabled={!$canUndo && !$selState.floating && !$isoPending} aria-label="Отменить">
       <Icon name="undo" />
     </button>
     <button class="icon-btn" onclick={() => editor.redo()} disabled={!$canRedo} aria-label="Повторить">
@@ -304,6 +318,17 @@
     gap: 8px;
     padding: 0 8px;
   }
+  .isobar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 4px 4px 12px;
+    font-size: 13px;
+    color: var(--fg-dim);
+  }
+  .isobar span {
+    margin-right: 6px;
+  }
   .selbar {
     display: flex;
     align-items: center;
@@ -343,7 +368,7 @@
   /* Phones: 8 toolbar buttons must still fit in one row. */
   @media (max-width: 440px) {
     .toolbar .icon-btn {
-      width: 40px;
+      width: 37px;
     }
     .toolbar .sep {
       margin: 0 2px;
@@ -352,9 +377,13 @@
   @media (max-width: 370px) {
     .toolbar {
       gap: 0;
+      padding: 3px;
     }
     .toolbar .icon-btn {
-      width: 37px;
+      width: 35px;
+    }
+    .toolbar .sep {
+      margin: 0 1px;
     }
   }
   .icon-btn.open:not(.active) {

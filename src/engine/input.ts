@@ -1,6 +1,7 @@
 import { EMPTY, rgbToPixel } from './color';
 import type { Editor, Tool } from './editor';
 import { openFromFile, saveToFile } from './fileio';
+import { boxPixels, extrude, faceBox, pickPlane, type Box, type IsoPlane } from './isocube';
 
 /**
  * Input model:
@@ -31,6 +32,10 @@ interface StrokeState {
   /** Select tool: drawing a new marquee or dragging the selection. */
   selMode?: 'marquee' | 'move';
   start?: Pt;
+  /** Iso box tool: drawing the first face, or extruding the pending one. */
+  isoMode?: 'face' | 'extrude';
+  isoPlane?: IsoPlane;
+  isoBox?: Box;
 }
 
 const TAP_MAX_MS = 280;
@@ -125,6 +130,7 @@ export class InputController {
   private startStroke(e: PointerEvent, tool: Tool, override: boolean) {
     const ed = this.editor;
     const value = tool === 'eraser' ? EMPTY : rgbToPixel(ed.color.get());
+    this.strokeSize = ed.sizeFor(tool);
     this.stroke = {
       pointerId: e.pointerId,
       pointerType: e.pointerType,
@@ -148,8 +154,26 @@ export class InputController {
       }
       return;
     }
+    if (tool === 'iso') {
+      const px = this.pixelAt(this.local(e));
+      this.stroke.start = px;
+      this.stroke.last = px;
+      if (ed.iso) {
+        // Second step: the pending face's stroke is still open; extrude it.
+        this.stroke.isoMode = 'extrude';
+      } else {
+        ed.selection.clear();
+        ed.history.begin();
+        this.stroke.isoMode = 'face';
+        this.stamp(px.x, px.y, this.stroke.value);
+        ed.renderer.requestRender();
+      }
+      return;
+    }
     if (tool !== 'picker') {
-      // Painting (e.g. with the stylus eraser end) commits any selection move first.
+      // Painting (e.g. with the stylus eraser end) commits any selection move
+      // and any pending iso face first.
+      ed.commitIso();
       ed.selection.clear();
       ed.history.begin();
     }
@@ -166,6 +190,24 @@ export class InputController {
       return;
     }
     if (s.last && s.last.x === px.x && s.last.y === px.y) return;
+    if (s.tool === 'iso') {
+      const a = s.start!;
+      const dx = px.x - a.x, dy = px.y - a.y;
+      let box: Box, edges = ed.isoEdges.get();
+      if (s.isoMode === 'face') {
+        s.isoPlane = pickPlane(dx, dy, ed.isoFace.get());
+        box = faceBox(a.x, a.y, dx, dy, s.isoPlane);
+        edges = 'all'; // a lone face shows all four sides
+      } else {
+        box = extrude(ed.iso!.face, ed.iso!.plane, dx, dy);
+      }
+      s.isoBox = box;
+      ed.history.rollbackCurrent();
+      for (const [x, y] of boxPixels(box, edges)) this.stamp(x, y, s.value);
+      s.last = px;
+      ed.renderer.requestRender();
+      return;
+    }
     if (s.tool === 'line') {
       // Live preview: undo the previous preview and draw start → current point.
       const a = s.start ?? px;
@@ -194,8 +236,11 @@ export class InputController {
     for (const [x, y] of linePixels(x0, y0, x1, y1)) this.stamp(x, y, value);
   }
 
+  /** Brush size of the current (or just finished) stroke. */
+  private strokeSize = 1;
+
   private stamp(x: number, y: number, value: number) {
-    const n = this.stroke ? this.editor.sizeFor(this.stroke.tool) : 1;
+    const n = this.strokeSize;
     const h = this.editor.history;
     const ox = x - Math.floor((n - 1) / 2), oy = y - Math.floor((n - 1) / 2);
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) h.set(ox + i, oy + j, value);
@@ -215,6 +260,35 @@ export class InputController {
         // A tap (or a cancelled drag) outside the selection just deselects.
         if (!moved || !commit) sel.clear();
       }
+      return;
+    }
+    if (s.tool === 'iso') {
+      const moved = !!s.last && !!s.start && (s.last.x !== s.start.x || s.last.y !== s.start.y);
+      if (s.isoMode === 'face') {
+        if (!commit || !moved || !s.isoBox || !s.isoPlane) {
+          ed.history.cancel();
+        } else {
+          // Keep the stroke open: the next press extrudes this face.
+          ed.iso = { plane: s.isoPlane, face: s.isoBox };
+          ed.isoPending.set(true);
+        }
+      } else if (ed.iso) {
+        if (!commit) {
+          // Cancelled extrusion: back to the flat face, still waiting.
+          ed.history.rollbackCurrent();
+          for (const [x, y] of boxPixels(ed.iso.face, 'all')) this.stamp(x, y, s.value);
+        } else {
+          // Extruded (or a plain tap: keep the flat face). Either way, done.
+          if (!moved) {
+            ed.history.rollbackCurrent();
+            for (const [x, y] of boxPixels(ed.iso.face, 'all')) this.stamp(x, y, s.value);
+          }
+          ed.iso = null;
+          ed.isoPending.set(false);
+          ed.history.commit();
+        }
+      }
+      ed.changed();
       return;
     }
     if (s.tool === 'picker') {
@@ -468,6 +542,10 @@ export class InputController {
     if (mod && k === 'c') { e.preventDefault(); ed.copySelection(); return; }
     // Ctrl+V is handled by the 'paste' event (main.ts) so a system clipboard image can win.
     if (mod) return;
+    if (ed.iso) {
+      if (k === 'escape') { e.preventDefault(); ed.cancelIso(); return; }
+      if (k === 'enter') { e.preventDefault(); ed.commitIso(); return; }
+    }
     const sel = ed.selection;
     if (sel.rect) {
       const arrows: Record<string, [number, number]> = {
@@ -488,6 +566,7 @@ export class InputController {
       case 'i': ed.tool.set('picker'); break;
       case 'm': ed.tool.set('select'); break;
       case 'l': ed.tool.set('line'); break;
+      case 'k': ed.tool.set('iso'); break;
       case '[': ed.sizeStore(ed.tool.get())?.update((n) => Math.max(1, n - 1)); break;
       case ']': ed.sizeStore(ed.tool.get())?.update((n) => Math.min(MAX_SIZE, n + 1)); break;
       case '0': ed.resetView(); break;

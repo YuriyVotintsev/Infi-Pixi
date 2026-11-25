@@ -1,10 +1,11 @@
 <script lang="ts">
   import { BACKDROPS, type Editor } from '../engine/editor';
+  import type { IsoEdges, IsoFace } from '../engine/isocube';
   import { MAX_SIZE } from '../engine/input';
   import { rgbToHex } from '../engine/color';
   import Icon from './Icon.svelte';
 
-  let { editor, tool }: { editor: Editor; tool: 'pen' | 'eraser' | 'line' } = $props();
+  let { editor, tool }: { editor: Editor; tool: 'pen' | 'eraser' | 'line' | 'iso' } = $props();
 
   // svelte-ignore state_referenced_locally
   const size = editor.sizeStore(tool)!;
@@ -13,9 +14,12 @@
   const chk = $derived(BACKDROPS[$backdrop].colors.map(rgbToHex));
 
   const QUICK = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32];
-  const title = $derived(tool === 'pen' ? 'Карандаш' : tool === 'line' ? 'Линия' : 'Ластик');
+  const TITLES = { pen: 'Карандаш', line: 'Линия', iso: 'Изометрический куб', eraser: 'Ластик' };
+  const title = $derived(TITLES[tool]);
   // svelte-ignore state_referenced_locally
-  const { lineSnap } = editor;
+  const { lineSnap, isoFace, isoEdges } = editor;
+  const FACES: [IsoFace, string][] = [['auto', 'Авто'], ['top', 'Верх'], ['left', 'Левая'], ['right', 'Правая']];
+  const EDGES: [IsoEdges, string][] = [['all', 'Все'], ['front', 'Передние'], ['back', 'Задние']];
 
   const set = (n: number) => size.set(Math.max(1, Math.min(MAX_SIZE, Math.round(n))));
   // Preview cell: how big one art pixel is drawn, so the whole brush fits in 72px.
@@ -57,6 +61,28 @@
       <button class="q" class:active={$size === n} onclick={() => set(n)}>{n}</button>
     {/each}
   </div>
+
+  {#if tool === 'iso'}
+    <div class="opt">
+      <span class="lbl">Первая грань</span>
+      <div class="seg">
+        {#each FACES as [id, label] (id)}
+          <button class="s" class:active={$isoFace === id} onclick={() => isoFace.set(id)}>{label}</button>
+        {/each}
+      </div>
+      {#if $isoFace === 'auto'}
+        <small>Пологий жест: верх, крутой ↘: правая, крутой ↙: левая</small>
+      {/if}
+    </div>
+    <div class="opt">
+      <span class="lbl">Рёбра</span>
+      <div class="seg">
+        {#each EDGES as [id, label] (id)}
+          <button class="s" class:active={$isoEdges === id} onclick={() => isoEdges.set(id)}>{label}</button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   {#if tool === 'line'}
     <label class="toggle">
@@ -141,6 +167,34 @@
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.05);
     font-variant-numeric: tabular-nums;
+  }
+  .opt {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .opt small {
+    font-size: 11px;
+    color: var(--fg-dim);
+  }
+  .lbl {
+    font-size: 13px;
+    color: var(--fg-dim);
+  }
+  .seg {
+    display: flex;
+    gap: 4px;
+  }
+  .s {
+    flex: 1;
+    height: 34px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    font-size: 13px;
+  }
+  .s.active {
+    background: var(--accent);
+    color: #fff;
   }
   .toggle {
     display: flex;

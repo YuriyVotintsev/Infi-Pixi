@@ -8,8 +8,9 @@ import { CHUNK, World } from './world';
 import { findPalette } from './palettes';
 import { Selection } from './selection';
 import { References } from './references';
+import type { Box, IsoEdges, IsoFace, IsoPlane } from './isocube';
 
-export type Tool = 'pen' | 'eraser' | 'picker' | 'select' | 'line';
+export type Tool = 'pen' | 'eraser' | 'picker' | 'select' | 'line' | 'iso';
 
 export type Backdrop = 'light' | 'medium' | 'dark';
 /** Transparency checker presets: two alternating colors each. */
@@ -40,6 +41,16 @@ export class Editor {
   readonly lineSize = persisted<number>('lineSize', 1);
   /** Line tool: constrain to pixel-clean angles (0°, 1:2, 45°, 2:1, 90°). */
   readonly lineSnap = persisted<boolean>('lineSnap', false);
+  /** Isometric box tool. */
+  readonly isoSize = persisted<number>('isoSize', 1);
+  readonly isoFace = persisted<IsoFace>('isoFace', 'auto');
+  readonly isoEdges = persisted<IsoEdges>('isoEdges', 'all');
+  /**
+   * First face drawn and waiting to be extruded. Its pixels sit in an open
+   * history stroke, so the finished box is a single undo step.
+   */
+  iso: { plane: IsoPlane; face: Box } | null = null;
+  readonly isoPending = store(false);
   /** Selected palette preset. */
   readonly paletteId = persisted<string>('paletteId', 'infi');
   /** User edits (added/removed colors) per preset id; absent = preset as shipped. */
@@ -104,6 +115,7 @@ export class Editor {
     this.penSize.subscribe(refreshHover);
     this.eraserSize.subscribe(refreshHover);
     this.lineSize.subscribe(refreshHover);
+    this.isoSize.subscribe(refreshHover);
     this.tool.subscribe(refreshHover);
 
     const sel = this.selection;
@@ -113,6 +125,7 @@ export class Editor {
     // Leaving the select tool commits whatever is being moved.
     this.tool.subscribe((t) => {
       if (t !== 'select') sel.clear();
+      if (t !== 'iso') this.commitIso();
     });
 
     this.zoom.set(this.camera.zoom * this.dpr);
@@ -134,14 +147,40 @@ export class Editor {
   }
 
   undo() {
+    // A face waiting for extrusion is simply discarded.
+    if (this.iso) {
+      this.cancelIso();
+      return;
+    }
     // Undo during a move drops it first, so the whole move is reverted at once.
     this.selection.clear();
     this.history.undo();
   }
 
   redo() {
+    this.commitIso();
     this.selection.clear();
     this.history.redo();
+  }
+
+  // ---- isometric box: pending first face ----
+
+  /** Keep the pending face as drawn (flat) and finish. */
+  commitIso() {
+    if (!this.iso) return;
+    this.iso = null;
+    this.isoPending.set(false);
+    this.history.commit();
+    this.changed();
+  }
+
+  /** Remove the pending face. */
+  cancelIso() {
+    if (!this.iso) return;
+    this.iso = null;
+    this.isoPending.set(false);
+    this.history.cancel();
+    this.changed();
   }
 
   // ---- selection actions (UI + keyboard) ----
@@ -232,6 +271,7 @@ export class Editor {
   }
 
   async clearAll() {
+    this.cancelIso();
     this.selection.clear();
     this.history.reset();
     this.world.clear();
@@ -256,7 +296,7 @@ export class Editor {
 
   /** Size store of a tool, or null for tools without a size. */
   sizeStore(tool: Tool) {
-    return tool === 'pen' ? this.penSize : tool === 'eraser' ? this.eraserSize : tool === 'line' ? this.lineSize : null;
+    return tool === 'pen' ? this.penSize : tool === 'eraser' ? this.eraserSize : tool === 'line' ? this.lineSize : tool === 'iso' ? this.isoSize : null;
   }
 
   sizeFor(tool: Tool): number {
