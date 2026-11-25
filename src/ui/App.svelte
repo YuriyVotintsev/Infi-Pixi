@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { isShape, type Editor, type ShapeTool, type Tool } from '../engine/editor';
-  import ShapesMenu from './ShapesMenu.svelte';
+  import { isShape, SHAPE_TOOLS, type Editor, type ShapeTool, type Tool } from '../engine/editor';
   import EllipseHandles from './EllipseHandles.svelte';
   import Icon from './Icon.svelte';
   import Palette from './Palette.svelte';
@@ -25,8 +24,7 @@
    * the rest are settings, opened by a long press on their toolbar button.
    */
   type SettingsTool = 'pen' | 'eraser' | ShapeTool;
-  /** 'shapes' is the first layer of the shapes menu; a ShapeTool panel is its second layer. */
-  type Panel = null | 'palette' | 'palette-settings' | 'shapes' | SettingsTool;
+  type Panel = null | 'palette' | 'palette-settings' | SettingsTool;
   const hasSettings = (t: Tool): t is SettingsTool => t === 'pen' || t === 'eraser' || isShape(t);
   let panel = $state<Panel>(null);
   const isSettings = $derived(panel !== null && panel !== 'palette');
@@ -62,17 +60,19 @@
     if (isSettings) panel = null;
   }
 
+  /** Long press: select the tool and open its settings (for "Фигуры": the current shape's). */
   function longTool(id: Slot) {
-    if (id === 'shapes') {
-      panel = 'shapes';
-      return;
-    }
-    tool.set(id);
-    panel = hasSettings(id) ? id : null;
+    const t = slotTool(id);
+    tool.set(t);
+    panel = hasSettings(t) ? t : null;
   }
 
   const slotActive = (id: Slot) => (id === 'shapes' ? isShape($tool) : $tool === id);
-  const slotOpen = (id: Slot) => (id === 'shapes' ? panel === 'shapes' || (panel !== null && isShape(panel as Tool)) : panel === id);
+  const slotOpen = (id: Slot) => (id === 'shapes' ? panel !== null && isShape(panel as Tool) : panel === id);
+
+  /** Second toolbar row with the individual shapes: shown while a shape tool is active. */
+  const SHAPE_LABELS: Record<ShapeTool, string> = { line: 'Линия', iso: 'Изометрический куб', ellipse: 'Круг / эллипс' };
+  const shapesRow = $derived(isShape($tool));
 
   function sizeOf(t: Tool): number {
     return t === 'pen' ? $penSize : t === 'eraser' ? $eraserSize : t === 'line' ? $lineSize : t === 'iso' ? $isoSize : t === 'ellipse' ? $ellipseSize : 1;
@@ -197,25 +197,9 @@
     <Palette {editor} onclose={() => (panel = null)} />
   {:else if panel === 'palette-settings'}
     <Palette {editor} full onclose={() => (panel = null)} />
-  {:else if panel === 'shapes'}
-    <ShapesMenu
-      {editor}
-      onpick={(t) => {
-        tool.set(t);
-        panel = null;
-      }}
-      onsettings={(t) => {
-        tool.set(t);
-        panel = t;
-      }}
-    />
-  {:else if panel === 'pen' || panel === 'eraser'}
+  {:else if panel === 'pen' || panel === 'eraser' || panel === 'line' || panel === 'iso' || panel === 'ellipse'}
     {#key panel}
       <ToolSettings {editor} tool={panel} />
-    {/key}
-  {:else if panel === 'line' || panel === 'iso' || panel === 'ellipse'}
-    {#key panel}
-      <ToolSettings {editor} tool={panel} onback={() => (panel = 'shapes')} />
     {/key}
   {/if}
 
@@ -275,6 +259,26 @@
     </div>
   {/if}
 
+  {#if shapesRow}
+    <div class="panel toolbar subrow" role="toolbar" aria-label="Фигуры">
+      {#each SHAPE_TOOLS as t (t)}
+        <button
+          class="icon-btn"
+          class:active={$tool === t}
+          class:open={panel === t}
+          use:press={{ tap: () => tapTool(t), long: () => longTool(t) }}
+          aria-label={SHAPE_LABELS[t]}
+          title="{SHAPE_LABELS[t]} (удерживать: настройки)"
+        >
+          <Icon name={t} />
+          {#if sizeOf(t) > 1}
+            <span class="badge">{sizeOf(t)}</span>
+          {/if}
+        </button>
+      {/each}
+    </div>
+  {/if}
+
   <div class="panel toolbar">
     {#each tools as t (t.id)}
       {@const tt = slotTool(t.id)}
@@ -285,7 +289,7 @@
         class:group={t.id === 'shapes'}
         use:press={{ tap: () => tapTool(t.id), long: () => longTool(t.id) }}
         aria-label={t.label}
-        title={t.id === 'shapes' ? 'Фигуры (удерживать: выбор и настройки)' : hasSettings(tt) ? `${t.label} (удерживать: настройки)` : t.label}
+        title={t.id === 'shapes' ? 'Фигуры (удерживать: настройки фигуры)' : hasSettings(tt) ? `${t.label} (удерживать: настройки)` : t.label}
       >
         <Icon name={tt} />
         {#if hasSettings(tt) && sizeOf(tt) > 1}

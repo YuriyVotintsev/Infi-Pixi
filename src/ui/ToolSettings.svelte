@@ -4,11 +4,7 @@
   import { MAX_SIZE } from '../engine/input';
   import Icon from './Icon.svelte';
 
-  let {
-    editor,
-    tool,
-    onback,
-  }: { editor: Editor; tool: 'pen' | 'eraser' | 'line' | 'iso' | 'ellipse'; onback?: () => void } = $props();
+  let { editor, tool }: { editor: Editor; tool: 'pen' | 'eraser' | 'line' | 'iso' | 'ellipse' } = $props();
 
   // svelte-ignore state_referenced_locally
   const size = editor.sizeStore(tool)!;
@@ -26,13 +22,6 @@
 
 <div class="panel settings" role="dialog" aria-label="Настройки: {title}">
   <div class="head">
-    {#if onback}
-      <button class="back" onclick={onback} aria-label="Назад к фигурам">
-        <Icon name="chevron-left" size={16} />
-        <span>Фигуры</span>
-      </button>
-      <span class="slash">/</span>
-    {/if}
     <Icon name={tool} size={18} />
     <span class="title">{title}</span>
   </div>
@@ -127,23 +116,6 @@
     align-items: center;
     gap: 8px;
     color: var(--fg-dim);
-  }
-  .back {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    height: 32px;
-    padding: 0 8px 0 4px;
-    margin-left: -4px;
-    border-radius: 8px;
-    color: var(--accent);
-  }
-  .back:active {
-    background: rgba(255, 255, 255, 0.08);
-  }
-  .slash {
-    color: var(--panel-border);
-    margin-right: 2px;
   }
   .title {
     color: var(--fg);
