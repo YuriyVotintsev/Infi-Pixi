@@ -80,8 +80,8 @@ function normalize(bx: Box): Box {
  * Pixel-art convention: every corner is a 2-pixel run (anchor + the pixel to its
  * right) shared by the edges meeting there, and 2:1 edges are runs of 2 from
  * corner to corner — so there are no single pixels or 3-pixel runs anywhere.
- * Vertical edges hang from the outer pixel of the leftmost/rightmost corners and
- * from both pixels of the middle (front/back) corners, keeping the box symmetric.
+ * Vertical edges are 1 px: the outer pixel of the leftmost/rightmost corners and
+ * the right pixel of the middle (front/back) corners.
  */
 export function boxPixels(box: Box, edges: IsoEdges): [number, number][] {
   const { ox, oy, a, b, h } = normalize(box);
@@ -116,7 +116,8 @@ export function boxPixels(box: Box, edges: IsoEdges): [number, number][] {
       // Vertical edges; which pixel(s) of the corner run they hang from.
       if (!show(i === 1 || j === 1, i === 0 || j === 0)) continue;
       const [x, y] = corner(i, j, 0);
-      const cols = x === minX ? [x] : x === maxX ? [x + 1] : [x, x + 1];
+      // Leftmost corner: its left pixel; rightmost and middle corners: the right pixel.
+      const cols = x === minX && x !== maxX ? [x] : [x + 1];
       for (const cx of cols) for (let s = 0; s <= h; s++) out.push([cx, y - s]);
     }
   return out;
