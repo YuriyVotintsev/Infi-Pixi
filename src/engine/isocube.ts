@@ -66,7 +66,7 @@ export function extrude(face: Box, plane: IsoPlane, dx: number, dy: number): Box
 }
 
 /** Same box with non-negative extents (moving the origin as needed). */
-function normalize(bx: Box): Box {
+export function normalize(bx: Box): Box {
   let { ox, oy, a, b, h } = bx;
   if (a < 0) { ox += 2 * a; oy += a; a = -a; }
   if (b < 0) { ox -= 2 * b; oy += b; b = -b; }
