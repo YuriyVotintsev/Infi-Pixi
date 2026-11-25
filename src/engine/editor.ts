@@ -9,8 +9,13 @@ import { findPalette } from './palettes';
 import { Selection } from './selection';
 import { References } from './references';
 import { boxPixels, type Box, type IsoEdges, type IsoFace, type IsoPlane } from './isocube';
+import { dragRect, ellipseFill, ellipseOutline, normRect, type Rect } from './ellipse';
 
-export type Tool = 'pen' | 'eraser' | 'picker' | 'select' | 'line' | 'iso';
+export type Tool = 'pen' | 'eraser' | 'picker' | 'select' | 'line' | 'iso' | 'ellipse';
+/** Tools grouped under the toolbar's "Фигуры" button. */
+export type ShapeTool = 'line' | 'iso' | 'ellipse';
+export const SHAPE_TOOLS: ShapeTool[] = ['line', 'iso', 'ellipse'];
+export const isShape = (t: Tool): t is ShapeTool => (SHAPE_TOOLS as Tool[]).includes(t);
 
 export type Backdrop = 'light' | 'medium' | 'dark';
 /** Transparency checker presets: two alternating colors each. */
@@ -63,6 +68,18 @@ export class Editor {
   readonly isoBox = store<Box | null>(null);
   /** Show handles to adjust a box before applying it. */
   readonly isoAdjust = persisted<boolean>('isoAdjust', true);
+
+  /** Ellipse / circle tool. */
+  readonly ellipseSize = persisted<number>('ellipseSize', 1);
+  readonly ellipseCircle = persisted<boolean>('ellipseCircle', false);
+  readonly ellipseFill = persisted<boolean>('ellipseFill', false);
+  readonly ellipseAdjust = persisted<boolean>('ellipseAdjust', true);
+  /** Ellipse drawn and being adjusted with handles (pixels in an open stroke). */
+  ell: { rect: Rect; value: number; size: number } | null = null;
+  readonly ellRect = store<Rect | null>(null);
+
+  /** Shape the toolbar's "Фигуры" button switches to. */
+  readonly lastShape = persisted<ShapeTool>('lastShape', 'line');
   /** Selected palette preset. */
   readonly paletteId = persisted<string>('paletteId', 'infi');
   /** User edits (added/removed colors) per preset id; absent = preset as shipped. */
@@ -128,6 +145,7 @@ export class Editor {
     this.eraserSize.subscribe(refreshHover);
     this.lineSize.subscribe(refreshHover);
     this.isoSize.subscribe(refreshHover);
+    this.ellipseSize.subscribe(refreshHover);
     this.tool.subscribe(refreshHover);
 
     const sel = this.selection;
@@ -138,6 +156,11 @@ export class Editor {
     this.tool.subscribe((t) => {
       if (t !== 'select') sel.clear();
       if (t !== 'iso') this.commitIso();
+      if (t !== 'ellipse') this.commitEll();
+      if (isShape(t)) this.lastShape.set(t);
+    });
+    this.ellipseFill.subscribe(() => {
+      if (this.ell) this.setEllRect(this.ell.rect);
     });
     this.isoEdges.subscribe(() => {
       if (this.iso?.stage === 'edit') this.setIsoBox(this.iso.box);
@@ -162,9 +185,9 @@ export class Editor {
   }
 
   undo() {
-    // A face waiting for extrusion is simply discarded.
-    if (this.iso) {
-      this.cancelIso();
+    // A shape still being drawn/adjusted is simply discarded.
+    if (this.iso || this.ell) {
+      this.cancelPending();
       return;
     }
     // Undo during a move drops it first, so the whole move is reverted at once.
@@ -173,7 +196,7 @@ export class Editor {
   }
 
   redo() {
-    this.commitIso();
+    this.commitPending();
     this.selection.clear();
     this.history.redo();
   }
@@ -184,13 +207,74 @@ export class Editor {
    * Replace the open stroke's preview with these pixels. Stamps a square brush
    * of `size` (same as the pen) on every pixel.
    */
-  paintPreview(pixels: [number, number][], value: number, size: number) {
+  paintPreview(pixels: [number, number][], value: number, size: number, fill: [number, number][] = []) {
     const h = this.history;
     h.rollbackCurrent();
+    for (const [x, y] of fill) h.set(x, y, value); // interior: 1 px is enough
     const d = Math.floor((size - 1) / 2);
     for (const [x, y] of pixels)
       for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) h.set(x - d + i, y - d + j, value);
     this.renderer.requestRender();
+  }
+
+  /** Any shape still pending (iso face/box or ellipse)? */
+  get hasPending(): boolean {
+    return !!this.iso || !!this.ell;
+  }
+
+  /** Apply whatever shape is pending. */
+  commitPending() {
+    this.commitIso();
+    this.commitEll();
+  }
+
+  cancelPending() {
+    this.cancelIso();
+    this.cancelEll();
+  }
+
+  // ---- ellipse ----
+
+  /** Pixels for an ellipse in `rect` with the current fill setting. */
+  ellipsePixels(rect: Rect): { outline: [number, number][]; fill: [number, number][] } {
+    const outline = ellipseOutline(rect);
+    return { outline, fill: this.ellipseFill.get() ? ellipseFill(outline) : [] };
+  }
+
+  /** Rectangle for a drag from a to b, honouring the circle setting (or Shift). */
+  ellipseDragRect(ax: number, ay: number, bx: number, by: number, forceCircle = false): Rect {
+    return dragRect(ax, ay, bx, by, forceCircle || this.ellipseCircle.get());
+  }
+
+  /** Enter the adjust stage for an ellipse (its stroke stays open). */
+  setEll(rect: Rect, value: number, size: number) {
+    this.ell = { rect: normRect(rect), value, size };
+    this.setEllRect(this.ell.rect);
+  }
+
+  setEllRect(rect: Rect) {
+    const e = this.ell;
+    if (!e) return;
+    e.rect = normRect(rect);
+    this.ellRect.set(e.rect);
+    const { outline, fill } = this.ellipsePixels(e.rect);
+    this.paintPreview(outline, e.value, e.size, fill);
+  }
+
+  commitEll() {
+    if (!this.ell) return;
+    this.ell = null;
+    this.ellRect.set(null);
+    this.history.commit();
+    this.changed();
+  }
+
+  cancelEll() {
+    if (!this.ell) return;
+    this.ell = null;
+    this.ellRect.set(null);
+    this.history.cancel();
+    this.changed();
   }
 
   /** Enter a pending iso stage with the given box (pixels already drawn or redrawn here). */
@@ -319,7 +403,7 @@ export class Editor {
   }
 
   async clearAll() {
-    this.cancelIso();
+    this.cancelPending();
     this.selection.clear();
     this.history.reset();
     this.world.clear();
@@ -344,7 +428,7 @@ export class Editor {
 
   /** Size store of a tool, or null for tools without a size. */
   sizeStore(tool: Tool) {
-    return tool === 'pen' ? this.penSize : tool === 'eraser' ? this.eraserSize : tool === 'line' ? this.lineSize : tool === 'iso' ? this.isoSize : null;
+    return tool === 'pen' ? this.penSize : tool === 'eraser' ? this.eraserSize : tool === 'line' ? this.lineSize : tool === 'iso' ? this.isoSize : tool === 'ellipse' ? this.ellipseSize : null;
   }
 
   sizeFor(tool: Tool): number {

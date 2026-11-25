@@ -4,16 +4,20 @@
   import { MAX_SIZE } from '../engine/input';
   import Icon from './Icon.svelte';
 
-  let { editor, tool }: { editor: Editor; tool: 'pen' | 'eraser' | 'line' | 'iso' } = $props();
+  let {
+    editor,
+    tool,
+    onback,
+  }: { editor: Editor; tool: 'pen' | 'eraser' | 'line' | 'iso' | 'ellipse'; onback?: () => void } = $props();
 
   // svelte-ignore state_referenced_locally
   const size = editor.sizeStore(tool)!;
 
   const QUICK = [1, 2, 3, 4, 6, 8, 12, 16, 32];
-  const TITLES = { pen: 'Карандаш', line: 'Линия', iso: 'Изометрический куб', eraser: 'Ластик' };
+  const TITLES = { pen: 'Карандаш', line: 'Линия', iso: 'Изометрический куб', ellipse: 'Круг / эллипс', eraser: 'Ластик' };
   const title = $derived(TITLES[tool]);
   // svelte-ignore state_referenced_locally
-  const { lineSnap, isoFace, isoEdges, isoAdjust } = editor;
+  const { lineSnap, isoFace, isoEdges, isoAdjust, ellipseCircle, ellipseFill, ellipseAdjust } = editor;
   const FACES: [IsoFace, string][] = [['auto', 'Авто'], ['top', 'Верх'], ['left', 'Левая'], ['right', 'Правая']];
   const EDGES: [IsoEdges, string][] = [['all', 'Все'], ['front', 'Передние'], ['back', 'Задние']];
 
@@ -22,6 +26,13 @@
 
 <div class="panel settings" role="dialog" aria-label="Настройки: {title}">
   <div class="head">
+    {#if onback}
+      <button class="back" onclick={onback} aria-label="Назад к фигурам">
+        <Icon name="chevron-left" size={16} />
+        <span>Фигуры</span>
+      </button>
+      <span class="slash">/</span>
+    {/if}
     <Icon name={tool} size={18} />
     <span class="title">{title}</span>
   </div>
@@ -67,6 +78,27 @@
     </label>
   {/if}
 
+  {#if tool === 'ellipse'}
+    <label class="toggle">
+      <span>
+        Ровный круг
+        <small>Равные стороны · на ПК также Shift</small>
+      </span>
+      <input type="checkbox" checked={$ellipseCircle} onchange={(e) => ellipseCircle.set(e.currentTarget.checked)} />
+    </label>
+    <label class="toggle">
+      <span>Заливка</span>
+      <input type="checkbox" checked={$ellipseFill} onchange={(e) => ellipseFill.set(e.currentTarget.checked)} />
+    </label>
+    <label class="toggle">
+      <span>
+        Подправлять перед применением
+        <small>Точки по углам и в центре, применить галочкой</small>
+      </span>
+      <input type="checkbox" checked={$ellipseAdjust} onchange={(e) => ellipseAdjust.set(e.currentTarget.checked)} />
+    </label>
+  {/if}
+
   {#if tool === 'line'}
     <label class="toggle">
       <span>
@@ -95,6 +127,23 @@
     align-items: center;
     gap: 8px;
     color: var(--fg-dim);
+  }
+  .back {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 32px;
+    padding: 0 8px 0 4px;
+    margin-left: -4px;
+    border-radius: 8px;
+    color: var(--accent);
+  }
+  .back:active {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .slash {
+    color: var(--panel-border);
+    margin-right: 2px;
   }
   .title {
     color: var(--fg);

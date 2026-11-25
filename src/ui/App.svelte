@@ -1,5 +1,7 @@
 <script lang="ts">
-  import type { Editor, Tool } from '../engine/editor';
+  import { isShape, type Editor, type ShapeTool, type Tool } from '../engine/editor';
+  import ShapesMenu from './ShapesMenu.svelte';
+  import EllipseHandles from './EllipseHandles.svelte';
   import Icon from './Icon.svelte';
   import Palette from './Palette.svelte';
   import ToolSettings from './ToolSettings.svelte';
@@ -13,7 +15,7 @@
 
   let { editor }: { editor: Editor } = $props();
   // svelte-ignore state_referenced_locally
-  const { tool, color, penSize, eraserSize, lineSize, isoSize, isoStage, zoom, canUndo, canRedo } = editor;
+  const { tool, color, penSize, eraserSize, lineSize, isoSize, ellipseSize, isoStage, ellRect, lastShape, zoom, canUndo, canRedo } = editor;
   // svelte-ignore state_referenced_locally
   const selState = editor.selection.state;
   const showSelBar = $derived($tool === 'select' && ($selState.active || $selState.hasClipboard));
@@ -22,9 +24,10 @@
    * Bottom panel. 'palette' is the quick swatch strip (tap on the color button);
    * the rest are settings, opened by a long press on their toolbar button.
    */
-  type Panel = null | 'palette' | 'palette-settings' | 'pen' | 'eraser' | 'line' | 'iso';
-  type SettingsTool = 'pen' | 'eraser' | 'line' | 'iso';
-  const hasSettings = (t: Tool): t is SettingsTool => t === 'pen' || t === 'eraser' || t === 'line' || t === 'iso';
+  type SettingsTool = 'pen' | 'eraser' | ShapeTool;
+  /** 'shapes' is the first layer of the shapes menu; a ShapeTool panel is its second layer. */
+  type Panel = null | 'palette' | 'palette-settings' | 'shapes' | SettingsTool;
+  const hasSettings = (t: Tool): t is SettingsTool => t === 'pen' || t === 'eraser' || isShape(t);
   let panel = $state<Panel>(null);
   const isSettings = $derived(panel !== null && panel !== 'palette');
   let menuOpen = $state(false);
@@ -42,28 +45,37 @@
     } catch {}
   }
 
-  const tools: { id: Tool; label: string }[] = [
+  type Slot = Tool | 'shapes';
+  const tools: { id: Slot; label: string }[] = [
     { id: 'pen', label: 'Карандаш' },
-    { id: 'line', label: 'Линия' },
-    { id: 'iso', label: 'Изометрический куб' },
+    { id: 'shapes', label: 'Фигуры' },
     { id: 'eraser', label: 'Ластик' },
     { id: 'picker', label: 'Пипетка' },
     { id: 'select', label: 'Выделение' },
   ];
 
-  function tapTool(t: Tool) {
-    tool.set(t);
+  /** The "Фигуры" slot stands for the last used shape tool. */
+  const slotTool = (id: Slot): Tool => (id === 'shapes' ? $lastShape : id);
+
+  function tapTool(id: Slot) {
+    tool.set(slotTool(id));
     if (isSettings) panel = null;
   }
 
-  function longTool(t: Tool) {
-    tool.set(t);
-    // Only pen and eraser have settings.
-    panel = hasSettings(t) ? t : null;
+  function longTool(id: Slot) {
+    if (id === 'shapes') {
+      panel = 'shapes';
+      return;
+    }
+    tool.set(id);
+    panel = hasSettings(id) ? id : null;
   }
 
+  const slotActive = (id: Slot) => (id === 'shapes' ? isShape($tool) : $tool === id);
+  const slotOpen = (id: Slot) => (id === 'shapes' ? panel === 'shapes' || (panel !== null && isShape(panel as Tool)) : panel === id);
+
   function sizeOf(t: Tool): number {
-    return t === 'pen' ? $penSize : t === 'eraser' ? $eraserSize : t === 'line' ? $lineSize : t === 'iso' ? $isoSize : 1;
+    return t === 'pen' ? $penSize : t === 'eraser' ? $eraserSize : t === 'line' ? $lineSize : t === 'iso' ? $isoSize : t === 'ellipse' ? $ellipseSize : 1;
   }
 
   // ---- fullscreen ----
@@ -111,6 +123,7 @@
 
 <References {editor} />
 <IsoHandles {editor} />
+<EllipseHandles {editor} />
 
 <div class="top-left build">{__BUILD_SHA__}</div>
 
@@ -184,10 +197,38 @@
     <Palette {editor} onclose={() => (panel = null)} />
   {:else if panel === 'palette-settings'}
     <Palette {editor} full onclose={() => (panel = null)} />
-  {:else if panel === 'pen' || panel === 'eraser' || panel === 'line' || panel === 'iso'}
+  {:else if panel === 'shapes'}
+    <ShapesMenu
+      {editor}
+      onpick={(t) => {
+        tool.set(t);
+        panel = null;
+      }}
+      onsettings={(t) => {
+        tool.set(t);
+        panel = t;
+      }}
+    />
+  {:else if panel === 'pen' || panel === 'eraser'}
     {#key panel}
       <ToolSettings {editor} tool={panel} />
     {/key}
+  {:else if panel === 'line' || panel === 'iso' || panel === 'ellipse'}
+    {#key panel}
+      <ToolSettings {editor} tool={panel} onback={() => (panel = 'shapes')} />
+    {/key}
+  {/if}
+
+  {#if $ellRect && $tool === 'ellipse'}
+    <div class="panel isobar" role="status">
+      <span>Подправьте точками и примените</span>
+      <button class="icon-btn" onclick={() => editor.cancelEll()} aria-label="Убрать фигуру" title="Убрать (Esc)">
+        <Icon name="close" />
+      </button>
+      <button class="icon-btn apply" onclick={() => editor.commitEll()} aria-label="Применить фигуру" title="Применить (Enter)">
+        <Icon name="check" />
+      </button>
+    </div>
   {/if}
 
   {#if $isoStage && $tool === 'iso'}
@@ -236,17 +277,19 @@
 
   <div class="panel toolbar">
     {#each tools as t (t.id)}
+      {@const tt = slotTool(t.id)}
       <button
         class="icon-btn"
-        class:active={$tool === t.id}
-        class:open={panel === t.id}
+        class:active={slotActive(t.id)}
+        class:open={slotOpen(t.id)}
+        class:group={t.id === 'shapes'}
         use:press={{ tap: () => tapTool(t.id), long: () => longTool(t.id) }}
         aria-label={t.label}
-        title={hasSettings(t.id) ? `${t.label} (удерживать: настройки)` : t.label}
+        title={t.id === 'shapes' ? 'Фигуры (удерживать: выбор и настройки)' : hasSettings(tt) ? `${t.label} (удерживать: настройки)` : t.label}
       >
-        <Icon name={t.id} />
-        {#if hasSettings(t.id) && sizeOf(t.id) > 1}
-          <span class="badge">{sizeOf(t.id)}</span>
+        <Icon name={tt} />
+        {#if hasSettings(tt) && sizeOf(tt) > 1}
+          <span class="badge">{sizeOf(tt)}</span>
         {/if}
       </button>
     {/each}
@@ -268,7 +311,7 @@
 
     <div class="sep"></div>
 
-    <button class="icon-btn" onclick={() => editor.undo()} disabled={!$canUndo && !$selState.floating && !$isoStage} aria-label="Отменить">
+    <button class="icon-btn" onclick={() => editor.undo()} disabled={!$canUndo && !$selState.floating && !$isoStage && !$ellRect} aria-label="Отменить">
       <Icon name="undo" />
     </button>
     <button class="icon-btn" onclick={() => editor.redo()} disabled={!$canRedo} aria-label="Повторить">
@@ -385,7 +428,7 @@
   /* Phones: 8 toolbar buttons must still fit in one row. */
   @media (max-width: 440px) {
     .toolbar .icon-btn {
-      width: 37px;
+      width: 40px;
     }
     .toolbar .sep {
       margin: 0 2px;
@@ -397,11 +440,22 @@
       padding: 3px;
     }
     .toolbar .icon-btn {
-      width: 35px;
+      width: 37px;
     }
     .toolbar .sep {
       margin: 0 1px;
     }
+  }
+  /* Corner mark: this button holds a group (long press for more). */
+  .icon-btn.group::after {
+    content: '';
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    border: 3px solid transparent;
+    border-right-color: currentColor;
+    border-bottom-color: currentColor;
+    opacity: 0.6;
   }
   .icon-btn.open:not(.active) {
     background: rgba(255, 255, 255, 0.1);

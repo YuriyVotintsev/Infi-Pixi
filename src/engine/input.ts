@@ -155,6 +155,16 @@ export class InputController {
       }
       return;
     }
+    if (tool === 'ellipse') {
+      const px = this.pixelAt(this.local(e));
+      ed.commitPending(); // apply an ellipse being adjusted, start a new one
+      ed.selection.clear();
+      ed.history.begin();
+      this.stroke.start = px;
+      this.stroke.last = px;
+      ed.paintPreview([[px.x, px.y]], this.stroke.value, this.strokeSize);
+      return;
+    }
     if (tool === 'iso') {
       const px = this.pixelAt(this.local(e));
       this.stroke.start = px;
@@ -174,8 +184,8 @@ export class InputController {
     }
     if (tool !== 'picker') {
       // Painting (e.g. with the stylus eraser end) commits any selection move
-      // and any pending iso face first.
-      ed.commitIso();
+      // and any pending shape first.
+      ed.commitPending();
       ed.selection.clear();
       ed.history.begin();
     }
@@ -204,6 +214,13 @@ export class InputController {
         s.isoBox = extrude(ed.iso.box, ed.iso.plane, dx, dy);
         ed.paintPreview(boxPixels(s.isoBox, ed.isoEdges.get()), ed.iso.value, ed.iso.size);
       }
+      s.last = px;
+      return;
+    }
+    if (s.tool === 'ellipse') {
+      const a = s.start!;
+      const { outline, fill } = ed.ellipsePixels(ed.ellipseDragRect(a.x, a.y, px.x, px.y, this.shift));
+      ed.paintPreview(outline, s.value, this.strokeSize, fill);
       s.last = px;
       return;
     }
@@ -259,6 +276,17 @@ export class InputController {
         // A tap (or a cancelled drag) outside the selection just deselects.
         if (!moved || !commit) sel.clear();
       }
+      return;
+    }
+    if (s.tool === 'ellipse') {
+      const moved = !!s.last && !!s.start && (s.last.x !== s.start.x || s.last.y !== s.start.y);
+      if (!commit || !moved) ed.history.cancel();
+      else {
+        const rect = ed.ellipseDragRect(s.start!.x, s.start!.y, s.last!.x, s.last!.y, this.shift);
+        if (ed.ellipseAdjust.get()) ed.setEll(rect, s.value, this.strokeSize);
+        else ed.history.commit();
+      }
+      ed.changed();
       return;
     }
     if (s.tool === 'iso') {
@@ -544,6 +572,10 @@ export class InputController {
       if (k === 'escape') { e.preventDefault(); ed.cancelIso(); return; }
       if (k === 'enter') { e.preventDefault(); ed.commitIso(); return; }
     }
+    if (ed.ell) {
+      if (k === 'escape') { e.preventDefault(); ed.cancelEll(); return; }
+      if (k === 'enter') { e.preventDefault(); ed.commitEll(); return; }
+    }
     const sel = ed.selection;
     if (sel.rect) {
       const arrows: Record<string, [number, number]> = {
@@ -565,6 +597,7 @@ export class InputController {
       case 'm': ed.tool.set('select'); break;
       case 'l': ed.tool.set('line'); break;
       case 'k': ed.tool.set('iso'); break;
+      case 'o': ed.tool.set('ellipse'); break;
       case '[': ed.sizeStore(ed.tool.get())?.update((n) => Math.max(1, n - 1)); break;
       case ']': ed.sizeStore(ed.tool.get())?.update((n) => Math.min(MAX_SIZE, n + 1)); break;
       case '0': ed.resetView(); break;
